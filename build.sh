@@ -25,7 +25,7 @@ set -ex
 
 BINUTILS_CONFFLAGS=
 GCC_BOOTSTRAP_CONFFLAGS=
-MUSL_CONFFLAGS=
+NEWLIB_CONFFLAGS=
 GCC_CONFFLAGS=
 WITH_SYSROOT=no
 . "$MUSL_CC_BASE"/defs.sh
@@ -45,7 +45,7 @@ then
 fi
 
 # binutils
-fetchextract "$BINUTILS_URL"
+fetchextract binutils "$BINUTILS_URL"
 BINUTILS_DIR=$(stripfileext $(basename $BINUTILS_URL))
 if printf "%s" "$BINUTILS_URL" | grep "2\.[2-9][0-9]" >/dev/null 2>&1 ; then
     BINUTILS_CONFFLAGS="$BINUTILS_CONFFLAGS --enable-deterministic-archives"
@@ -59,9 +59,9 @@ buildinstall 1 $BINUTILS_DIR --target=$TRIPLE --disable-werror $SYSROOT_FLAGS \
 # gcc 1
 if [ -z $GCC_URL ];
 then
-    fetchextract http://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/ gcc-$GCC_VERSION .tar.bz2
+    fetchextract gcc http://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/ gcc-$GCC_VERSION .tar.bz2
 else
-    fetchextract "$GCC_URL"
+    fetchextract gcc "$GCC_URL"
     if [ -e $GCC_EXTRACT_DIR ]; then
 	mv $GCC_EXTRACT_DIR gcc-$GCC_VERSION
     fi
@@ -69,9 +69,7 @@ fi
 
 [ "$GCC_BUILTIN_PREREQS" = "yes" ] && gccprereqs
 
-# gcc 1 is only used to bootstrap musl and gcc 2, so it is pointless to
-# optimize it.
-# If GCC_STAGE1_NOOPT is set, we build it without optimization and debug info,
+# If GCC_STAGE1_NOOPT is set, we build gcc without optimization and debug info,
 # which reduces overall build time considerably.
 SAVE_CFLAGS="$CFLAGS"
 SAVE_CXXFLAGS="$CXXFLAGS"
@@ -92,38 +90,18 @@ buildinstall 1 gcc-$GCC_VERSION --target=$TRIPLE $SYSROOT_FLAGS \
 export CFLAGS="$SAVE_CFLAGS"
 export CXXFLAGS="$SAVE_CXXFLAGS"
 
-# linux headers
-fetchextract $LINUX_HEADERS_URL
-LINUX_HEADERS_DIR=$(stripfileext $(basename $LINUX_HEADERS_URL))
+if [ "$NEWLIB_VERSION" != "no" ]
+then
+    PREFIX="$CC_PREFIX"
+    newlibfetchextract
+    NEWLIB_DIR=newlib-$NEWLIB_VERSION
+    sed -i -e 's,MAKEINFO="$MISSING makeinfo",MAKEINFO=true,g' \
+       $NEWLIB_DIR/configure
 
-if [ ! -e $LINUX_HEADERS_DIR/configured ]
-then
-    (
-    cd $LINUX_HEADERS_DIR
-    make $LINUX_DEFCONFIG ARCH=$LINUX_ARCH
-    touch configured
-    )
-fi
-if [ ! -e $LINUX_HEADERS_DIR/installedheaders ]
-then
-    (
-    cd $LINUX_HEADERS_DIR
-    make headers_install ARCH=$LINUX_ARCH INSTALL_HDR_PATH="$CC_PREFIX/$TRIPLE"
-    touch installedheaders
-    )
-fi
-
-if [ "$MUSL_VERSION" != "no" ]
-then
-    # musl in CC prefix
-    PREFIX="$CC_PREFIX/$TRIPLE"
-    muslfetchextract
     # We set both CROSS_COMPILE and CC because CC in the environment overrides
     # and CROSS_COMPILE setting
-    buildinstall '' musl-$MUSL_VERSION \
-        --enable-debug --enable-optimize CROSS_COMPILE="$TRIPLE-" CC="$TRIPLE-gcc" $MUSL_CONFFLAGS
-    unset PREFIX
-    PREFIX="$CC_PREFIX"
+    buildinstall '' newlib-$NEWLIB_VERSION \
+        --target=$TRIPLE CROSS_COMPILE=${TRIPLE}- CC_FOR_TARGET=$TRIPLE-gcc $NEWLIB_CONFFLAGS
 
     # if it didn't build libc.so, disable dynamic linking
     if [ ! -e "$CC_PREFIX/$TRIPLE/lib/libc.so" ]
@@ -135,21 +113,10 @@ then
     buildinstall 2 gcc-$GCC_VERSION --target=$TRIPLE $SYSROOT_FLAGS \
         --enable-languages=$LANGUAGES --disable-libmudflap \
         --disable-libsanitizer --disable-nls \
+        --disable-libssp \
         $GCC_MULTILIB_CONFFLAGS \
         $GCC_CONFFLAGS
 fi
 
-# un"fix" headers
-rm -rf "$CC_PREFIX/lib/gcc/$TRIPLE"/*/include-fixed/ "$CC_PREFIX/lib/gcc/$TRIPLE"/*/include/stddef.h
-
-# make backwards-named compilers for easier cross-compiling
-(
-    cd "$CC_PREFIX/bin"
-    for tool in $TRIPLE-*
-    do
-        btool=`echo "$tool" | sed 's/-linux-musl/-musl-linux/'`
-        [ "$tool" != "$btool" -a ! -e "$btool" ] && ln -s $tool $btool
-    done
-)
-
+echo "looks as if it worked o.0"
 exit 0

@@ -28,73 +28,29 @@ then
 fi
 
 # Versions of things (do this before config.sh so they can be config'd)
-BINUTILS_URL=http://ftp.gnu.org/gnu/binutils/binutils-2.25.1.tar.bz2
-#BINUTILS_URL=http://mirrors.kernel.org/sourceware/binutils/snapshots/binutils-2.24.90.tar.bz2
+#BINUTILS_URL=http://ftp.gnu.org/gnu/binutils/binutils-2.25.1.tar.bz2
+BINUTILS_URL=http://mirrors.kernel.org/sourceware/binutils/snapshots/binutils-2.24.90.tar.bz2
 #last GPL2 release is 2.17, with backported  -Bsymbolic support
 #BINUTILS_URL=http://landley.net/aboriginal/mirror/binutils-2.17.tar.bz2
-GCC_VERSION=5.3.0
+GCC_VERSION=4.2.4
 GDB_VERSION=7.9.1
 GMP_VERSION=6.1.0
 MPC_VERSION=1.0.3
 MPFR_VERSION=3.1.4
 LIBELF_VERSION=master
-# use kernel headers from vanilla linux kernel - may be necessary for porting to a bleeding-edge arch
-# LINUX_HEADERS_URL=http://www.kernel.org/pub/linux/kernel/v3.0/linux-3.12.6.tar.xz
-# use patched sabotage-linux kernel-headers package (fixes userspace clashes of some kernel structs)
-# from upstream repo https://github.com/sabotage-linux/kernel-headers
-LINUX_HEADERS_URL=http://ftp.barfooze.de/pub/sabotage/tarballs/kernel-headers-3.12.6-5.tar.xz
-
-# musl can optionally be checked out from GIT, in which case MUSL_VERSION must
-# be set to a git tag and MUSL_GIT set to yes in config.sh
-MUSL_DEFAULT_VERSION=1.1.20
-MUSL_GIT_VERSION=0fa1e638e87cf257e9f96b4019b2076afd674a19
-MUSL_GIT_REPO='git://git.musl-libc.org/musl'
-MUSL_VERSION="$MUSL_DEFAULT_VERSION"
-MUSL_GIT=no
+# check available versions at ftp://sourceware.org/pub/newlib/index.html
+NEWLIB_VERSION=1.19.0
 
 # You can choose languages
-LANG_CXX=yes
+LANG_CXX=no
 LANG_OBJC=no
 LANG_FORTRAN=no
 
 . ./config.sh
 
 # Auto-deteect an ARCH if not specified
-if [ -z "$ARCH" ]
-then
-    for MAYBECC in cc gcc clang
-    do
-        $MAYBECC -dumpmachine > /dev/null 2> /dev/null &&
-        ARCH=`$MAYBECC -dumpmachine | sed 's/-.*//'` &&
-        break
-    done
-    unset MAYBECC
-
-    [ -z "$ARCH" ] && ARCH=`uname -m`
-fi
-
-# Auto-detect a TRIPLE if not specified
-if [ -z "$TRIPLE" ]
-then
-    case "$ARCH" in
-        armhf)
-            ARCH="arm"
-            TRIPLE="$ARCH-linux-musleabihf"
-            ;;
-
-        arm*)
-            TRIPLE="$ARCH-linux-musleabi"
-            ;;
-
-        x32)
-            TRIPLE="x86_64-x32-linux-musl"
-            ;;
-
-        *)
-            TRIPLE="$ARCH-linux-musl"
-            ;;
-    esac
-fi
+ARCH=mmix
+TRIPLE=mmix
 
 # Choose our languages
 LANGUAGES=c
@@ -116,29 +72,6 @@ fi
 
 PATH="$CC_PREFIX/bin:$PATH"
 export PATH
-
-# Get our Linux arch and defconfig
-LINUX_ARCH=`echo "$ARCH" | sed 's/-.*//'`
-LINUX_DEFCONFIG=defconfig
-case "$LINUX_ARCH" in
-    i*86) LINUX_ARCH=i386 ;;
-    x32) LINUX_ARCH=x86_64 ;;
-    arm*) LINUX_ARCH=arm ;;
-    aarch64*) LINUX_ARCH=arm64 ;;
-    mips*) LINUX_ARCH=mips ;;
-    or1k*) LINUX_ARCH=openrisc ;;
-    sh*) LINUX_ARCH=sh ;;
-
-    powerpc* | ppc*)
-        LINUX_ARCH=powerpc
-        LINUX_DEFCONFIG=g5_defconfig
-        ;;
-
-    microblaze)
-        LINUX_DEFCONFIG=mmu_defconfig
-	;;
-esac
-export LINUX_ARCH
 
 # Get the target-specific multilib option, if applicable
 GCC_MULTILIB_CONFFLAGS="--disable-multilib --with-multilib-list="
@@ -162,14 +95,14 @@ fetch() {
 }
 
 extract() {
-    if [ ! -e "$2/extracted" ]
+    if [ ! -e "$2/extracted.$3" ]
     then
         tar xf "$MUSL_CC_BASE/tarballs/$1" ||
             tar Jxf "$MUSL_CC_BASE/tarballs/$1" ||
             tar jxf "$MUSL_CC_BASE/tarballs/$1" ||
             tar zxf "$MUSL_CC_BASE/tarballs/$1"
         mkdir -p "$2"
-        touch "$2/extracted"
+        touch "$2/extracted.$3"
     fi
 }
 
@@ -181,6 +114,8 @@ stripfileext() {
 }
 
 fetchextract() {
+    name="$1"
+    shift
     baseurl="$1"
     [ -z "$2" ] && baseurl=$(printf "%s" "$1" | sed 's/\(.*\/\).*/\1/')
     dir="$2"
@@ -189,51 +124,48 @@ fetchextract() {
     [ -z "$fn" ] && fn=$(basename "$1")
 
     fetch "$baseurl" "$fn"
-    extract "$fn" "$dir"
+    extract "$fn" "$dir" "$name"
 }
 
 gitfetchextract() {
+    name="$1"
+    shift
     if [ ! -e "$MUSL_CC_BASE/tarballs/$3".tar.gz ]
     then
         git archive --format=tar --remote="$1" "$2" | \
             gzip -c > "$MUSL_CC_BASE/tarballs/$3".tar.gz || die "Failed to fetch $3-$2"
     fi
-    if [ ! -e "$3/extracted" ]
+    if [ ! -e "$3/extracted.$name" ]
     then
         mkdir -p "$3"
         (
         cd "$3" || die "Failed to cd $3"
         extract "$3".tar.gz extracted
-        touch extracted
+        touch extracted.$name
         )
     fi
 }
 
-muslfetchextract() {
-    if [ "$MUSL_GIT" = "yes" ]
-    then
-        gitfetchextract "$MUSL_GIT_REPO" $MUSL_VERSION musl-$MUSL_VERSION
-    else
-        fetchextract http://www.musl-libc.org/releases/ musl-$MUSL_VERSION .tar.gz
-    fi
+newlibfetchextract() {
+    fetchextract newlib http://mirrors.kernel.org/sourceware//newlib/ newlib-${NEWLIB_VERSION} .tar.gz
 }
 
 gccprereqs() {
     if [ ! -e gcc-$GCC_VERSION/gmp ]
     then
-        fetchextract http://ftp.gnu.org/pub/gnu/gmp/ gmp-$GMP_VERSION .tar.bz2
+        fetchextract gmp http://ftp.gnu.org/pub/gnu/gmp/ gmp-$GMP_VERSION .tar.bz2
         mv gmp-$GMP_VERSION gcc-$GCC_VERSION/gmp
     fi
 
     if [ ! -e gcc-$GCC_VERSION/mpfr ]
     then
-        fetchextract http://ftp.gnu.org/gnu/mpfr/ mpfr-$MPFR_VERSION .tar.bz2
+        fetchextract mpfr http://ftp.gnu.org/gnu/mpfr/ mpfr-$MPFR_VERSION .tar.bz2
         mv mpfr-$MPFR_VERSION gcc-$GCC_VERSION/mpfr
     fi
 
     if [ ! -e gcc-$GCC_VERSION/mpc ]
     then
-        fetchextract https://ftp.gnu.org/gnu/mpc/ mpc-$MPC_VERSION .tar.gz
+        fetchextract mpc https://ftp.gnu.org/gnu/mpc/ mpc-$MPC_VERSION .tar.gz
         mv mpc-$MPC_VERSION gcc-$GCC_VERSION/mpc
     fi
 }

@@ -1,13 +1,4 @@
-# ARCH will be auto-detected as the host if not specified
-#ARCH=i486
-#ARCH=x86_64
-#ARCH=powerpc
-#ARCH=arm
-#ARCH=microblaze
-#ARCH=mips
-#ARCH=mipsel
-
-CC_BASE_PREFIX=/opt/cross
+CC_BASE_PREFIX=$HOME/toolchains
 
 # If you use arm, you may need more fine-tuning:
 # arm hardfloat v7
