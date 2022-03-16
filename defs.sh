@@ -49,8 +49,8 @@ LANG_FORTRAN=no
 . ./config.sh
 
 # Auto-deteect an ARCH if not specified
-ARCH=mmix
-TRIPLE=mmix
+test -z "$ARCH" && ARCH=mmix
+test -z "$TRIPLE" && TRIPLE=mmix
 
 # Choose our languages
 LANGUAGES=c
