@@ -1,5 +1,4 @@
-GCC_VERSION=4.6.4 
-NEWLIB_VERSION=1.20.0
+GCC_VERSION=4.6.4
 NEWLIB_VERSION=4.1.0
 LANG_CXX=no
 BINUTILS_URL=http://mirrors.kernel.org/sourceware/binutils/releases/binutils-2.23.2.tar.bz2
@@ -13,6 +12,7 @@ ENABLE_POST_BUILD_HOOK=1
 post_build_hook() {
 cd $CC_BASE_PREFIX/$TRIPLE/bin
 for x in mips* ; do
+ strip "$x"
  shn=$(printf "%s\n" "$x" | awk '{split($0, a, "-"); print(a[4]); }')
  test "$shn" = gcc || ln -sf "$x" psp-"$shn"
 done
