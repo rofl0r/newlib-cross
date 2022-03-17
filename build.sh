@@ -119,4 +119,6 @@ then
 fi
 
 echo "looks as if it worked o.0"
+
+test -z "$ENABLE_POST_BUILD_HOOK" || post_build_hook
 exit 0
