@@ -147,7 +147,7 @@ gitfetchextract() {
 }
 
 newlibfetchextract() {
-    fetchextract newlib http://mirrors.kernel.org/sourceware//newlib/ newlib-${NEWLIB_VERSION} .tar.gz
+    fetchextract newlib http://sourceware.org/pub/newlib/ newlib-${NEWLIB_VERSION} .tar.gz
 }
 
 gccprereqs() {
