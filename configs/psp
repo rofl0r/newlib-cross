@@ -3,7 +3,7 @@ NEWLIB_VERSION=4.1.0
 LANG_CXX=no
 BINUTILS_URL=http://mirrors.kernel.org/sourceware/binutils/releases/binutils-2.23.2.tar.bz2
 # http://mirrors.kernel.org/sourceware/binutils/snapshots/binutils-2.24.90.tar.bz2
-ARCH=mips
+ARCH=mipsel
 TRIPLE=mipsallegrexel-psp-elf
 GCC_CONFFLAGS=--with-float=hard
 
@@ -34,6 +34,7 @@ git checkout cc887d731f635e06fba85118eb5c7ee87746cbc8 # known good version
 export PATH="\$PATH:$CC_BASE_PREFIX/$TRIPLE/bin"
 ./configure --with-pspdev=$CC_BASE_PREFIX/$TRIPLE
 make && make install-data install
+cp $CC_BASE_PREFIX/$TRIPLE/psp/lib/crt0.o $CC_BASE_PREFIX/$TRIPLE/$TRIPLE/lib
 *****************************************************************************
 EOF
 }
