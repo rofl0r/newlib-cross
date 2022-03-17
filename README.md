@@ -1,19 +1,30 @@
-About mmix-cross
-================
+About newlib-cross
+==================
 
-This is a small suite of scripts and patches to build an mmix
-cross-compiler for knuth's simulator.
+This is a small suite of scripts and patches to build a newlib gcc toolchain
+for a number of supported systems, or just regular newlib toolchain for
+baremetal systems that don't require any additional patches.
 
-For the impatient, ./build.sh should build a cross compiler to
-$HOME/toolchains, no muss, no fuss. Otherwise, you can edit
-config.sh to make cross-compilers to other architectures, and even copy
-config.sh to another directory then run build.sh from there to avoid polluting
-the source dir.
+supported:
+mmix - cross-compiler for knuth's MMIX simulator.
+       note: this compiler builds without custom patches, but only gcc 4.2.4
+       is tested (see configs/mmix).
+psp  - cross-compiler for playstation portable, intended to be used with
+       pspsdk ( https://github.com/pspdev/pspsdk ).
+       supported are all versions where there exists a gcc-x.x.x-psp.diff
+       in patches/.
+
+./build.sh should build a cross compiler to $HOME/toolchains, no muss, no fuss.
+You should edit config.sh to select a config preset and eventually override
+paths, and component versions to your likings. 
+you may even copy config.sh to another directory then run build.sh from there
+to avoid polluting the source dir, but clean.sh can always clean up after a
+build.
 
 Notes on building normal cross compilers
 ========================================
 
-* You can set versions of binutils, GCC or musl in config.sh with:
+* You can set versions of binutils, GCC or newlib in config.sh with:
 
         BINUTILS_VERSION=<version>
         GCC_VERSION=<version>
@@ -49,7 +60,7 @@ Other scripts and helpers
 Requirements
 ============
 
-musl-cross depends on:
+newlib-cross depends on:
 
 * shell and core utils (busybox is fine)
 * mercurial or git (for checkout only)
@@ -57,7 +68,7 @@ musl-cross depends on:
 * patch
 * gcc
 * make
-* gawk
+* awk
 
 The following are GCC dependencies, which can be installed on the host system,
 or installed automatically using `GCC_BUILTIN_PREREQS=yes`:
