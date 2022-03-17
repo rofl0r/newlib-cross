@@ -59,7 +59,11 @@ buildinstall 1 $BINUTILS_DIR --target=$TRIPLE --disable-werror $SYSROOT_FLAGS \
 # gcc 1
 if [ -z $GCC_URL ];
 then
-    fetchextract gcc http://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/ gcc-$GCC_VERSION .tar.bz2
+    gcc_ext=bz2
+    if test $(printf "%s\n" "$GCC_VERSION" | sed 's/\.//g') -gt 540 ; then
+      gcc_ext=xz
+    fi
+    fetchextract gcc http://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/ gcc-$GCC_VERSION .tar.${gcc_ext}
 else
     fetchextract gcc "$GCC_URL"
     if [ -e $GCC_EXTRACT_DIR ]; then
