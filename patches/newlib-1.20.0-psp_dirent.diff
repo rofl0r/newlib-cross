@@ -1,0 +1,98 @@
+From a739f92a588c7566a7f38d27f1ff87af5dc93f7f Mon Sep 17 00:00:00 2001
+From: rofl0r <rofl0r@users.noreply.github.com>
+Date: Wed, 16 Mar 2022 23:19:19 +0000
+Subject: [PATCH] fix dirent struct
+
+the struct wasnt quite like posix demands, and breaks the build with
+latest pspsdk.
+---
+ newlib/libc/sys/psp/libcglue.c   | 10 +++++----
+ newlib/libc/sys/psp/sys/dirent.h | 35 ++++++++++++++++++++++----------
+ 2 files changed, 30 insertions(+), 15 deletions(-)
+
+diff --git a/newlib/libc/sys/psp/libcglue.c b/newlib/libc/sys/psp/libcglue.c
+index d64ba4f..9821ae9 100644
+--- a/newlib/libc/sys/psp/libcglue.c
++++ b/newlib/libc/sys/psp/libcglue.c
+@@ -414,11 +414,9 @@ DIR *opendir(const char *filename)
+ struct dirent *readdir(DIR *dirp)
+ {
+ 	int ret;
++	SceIoDirent scede = {0};
+ 
+-	/* Zero the dirent, to avoid possible problems with sceIoDread */
+-	memset(&dirp->de, 0, sizeof(struct dirent));
+-
+-	ret = sceIoDread(dirp->uid, (SceIoDirent *)&dirp->de);
++	ret = sceIoDread(dirp->uid, &scede);
+ 	if (ret == 0) {
+ 		/* EOF */
+ 		errno = 0;
+@@ -428,6 +426,10 @@ struct dirent *readdir(DIR *dirp)
+ 		(void) __psp_set_errno(ret);
+ 		return NULL;
+ 	}
++	memset(&dirp->de, 0, sizeof(struct dirent));
++	dirp->de.d_reclen = strlen(scede.d_name);
++	memcpy(dirp->de.d_name, scede.d_name, dirp->de.d_reclen);
++	/* FIXME figure out the right values for rest of the dirent struct */
+ 
+ 	return &dirp->de;
+ }
+diff --git a/newlib/libc/sys/psp/sys/dirent.h b/newlib/libc/sys/psp/sys/dirent.h
+index 26e2ccc..5007857 100644
+--- a/newlib/libc/sys/psp/sys/dirent.h
++++ b/newlib/libc/sys/psp/sys/dirent.h
+@@ -7,25 +7,38 @@
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+-	
+-#include <pspiofilemgr_dirent.h> 
+-	
++
+ #define MAXNAMLEN 255
+ 	
+-/* Same as SceIoDirent, just with a different name. */
+ struct dirent {
+-	/** File status. */
+-	SceIoStat 	d_stat;
+-	/** File name. */
+-	char 		d_name[256];
+-	/** Device-specific data. */
+-	void * 		d_private;
+-	int 		dummy;
++	ino_t      d_fileno; /* file number of entry */
++	off_t          d_off; /* Not an offset; see below */
++	unsigned short int d_reclen;    /* Length of this record */
++	unsigned char  d_type;          /* Type of file; not supported by all fs */
++	char 		d_name[MAXNAMLEN+1];
+ };
+ 
++#define	DT_UNKNOWN	 0
++#define	DT_FIFO		 1
++#define	DT_CHR		 2
++#define	DT_DIR		 4
++#define	DT_BLK		 6
++#define	DT_REG		 8
++#define	DT_LNK		10
++#define	DT_SOCK		12
++#define	DT_WHT		14
++
++#include <pspiofilemgr_dirent.h>
++
+ typedef struct {
+ 	SceUID		uid;
+ 	struct dirent	de;
++	int dd_fd;		/* directory file */
++	int dd_loc;		/* position in buffer */
++	int dd_seek;
++	char *dd_buf;	/* buffer */
++	int dd_len;		/* buffer length */
++	int dd_size; /* amount of data in buffer */
+ } DIR;
+ 
+ DIR *opendir (const char *);
+-- 
+2.25.0
+

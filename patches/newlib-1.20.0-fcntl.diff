@@ -1,0 +1,41 @@
+From 60f1cc7e2414d133fc52a985fe959ddee4389e30 Mon Sep 17 00:00:00 2001
+From: rofl0r <rofl0r@users.noreply.github.com>
+Date: Wed, 16 Mar 2022 22:40:12 +0000
+Subject: [PATCH] add couple flags to fcntl.h
+
+taken from newlib 4.1
+---
+ newlib/libc/include/sys/_default_fcntl.h | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/newlib/libc/include/sys/_default_fcntl.h b/newlib/libc/include/sys/_default_fcntl.h
+index 1884136..2aa3ff4 100644
+--- a/newlib/libc/include/sys/_default_fcntl.h
++++ b/newlib/libc/include/sys/_default_fcntl.h
+@@ -22,6 +22,12 @@ extern "C" {
+ #define	_FNONBLOCK	0x4000	/* non blocking I/O (POSIX style) */
+ #define	_FNDELAY	_FNONBLOCK	/* non blocking I/O (4.2 style) */
+ #define	_FNOCTTY	0x8000	/* don't assign a ctty on this open */
++#define	_FNOINHERIT	0x40000
++#define	_FDIRECT	0x80000
++#define	_FNOFOLLOW	0x100000
++#define	_FDIRECTORY	0x200000
++#define	_FEXECSRCH	0x400000
++
+ 
+ #define	O_ACCMODE	(O_RDONLY|O_WRONLY|O_RDWR)
+ 
+@@ -53,6 +59,10 @@ extern "C" {
+ #define O_NOINHERIT	_FNOINHERIT
+ /* O_CLOEXEC is the Linux equivalent to O_NOINHERIT */
+ #define O_CLOEXEC	_FNOINHERIT
++#define	O_NOFOLLOW	_FNOFOLLOW
++#define	O_DIRECTORY	_FDIRECTORY
++#define	O_EXEC		_FEXECSRCH
++#define	O_SEARCH	_FEXECSRCH
+ 
+ /* The windows header files define versions with a leading underscore.  */
+ #define _O_RDONLY	O_RDONLY
+-- 
+2.25.0
+

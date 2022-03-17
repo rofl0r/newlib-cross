@@ -1,0 +1,63 @@
+From 53f30e46332a085402fc1752cda01ea543f64d3a Mon Sep 17 00:00:00 2001
+From: rofl0r <rofl0r@users.noreply.github.com>
+Date: Wed, 16 Mar 2022 22:12:11 +0000
+Subject: [PATCH] fix clash with pspsdk sceNetInetSelect decl
+
+---
+ newlib/libc/sys/psp/select.c     | 11 ++++++++++-
+ newlib/libc/sys/psp/sys/select.h |  3 ---
+ 2 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/newlib/libc/sys/psp/select.c b/newlib/libc/sys/psp/select.c
+index 88468ce..46cb69b 100644
+--- a/newlib/libc/sys/psp/select.c
++++ b/newlib/libc/sys/psp/select.c
+@@ -14,6 +14,7 @@
+ #include <fcntl.h>
+ #include <errno.h>
+ #include <sys/select.h>
++#include <stdint.h>
+ #include <psptypes.h>
+ #include <pspthreadman.h>
+ 
+@@ -21,6 +22,14 @@
+ 
+ #define SELECT_POLLING_DELAY_IN_us	100
+ 
++struct SceNetInetTimeval {
++    uint32_t tv_sec;
++    uint32_t tv_usec;
++};
++
++extern int sceNetInetSelect(int n, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct SceNetInetTimeval *timeout);
++
++
+ static int __psp_poll_select(int n, fd_set *readfds, fd_set *writefds, fd_set *exceptfds);
+ 
+ int	select(int n, fd_set *readfds, fd_set *writefds,
+@@ -70,7 +79,7 @@ static int __psp_poll_select(int n, fd_set *readfds, fd_set *writefds, fd_set *e
+ 	fd_set ready_readfds, ready_writefds, ready_exceptfds;
+ 	fd_set scereadfds, scewritefds, sceexceptfds;
+ 	SceKernelMppInfo info;
+-	struct timeval scetv;
++	struct SceNetInetTimeval scetv;
+ 
+ 	FD_ZERO(&ready_readfds);
+ 	FD_ZERO(&ready_writefds);
+diff --git a/newlib/libc/sys/psp/sys/select.h b/newlib/libc/sys/psp/sys/select.h
+index 3d9ed46..54f82bd 100644
+--- a/newlib/libc/sys/psp/sys/select.h
++++ b/newlib/libc/sys/psp/sys/select.h
+@@ -41,9 +41,6 @@ extern "C" {
+ #include <sys/fd_set.h>
+ #include <sys/time.h>
+ 
+-int	sceNetInetSelect(int n, fd_set *readfds, fd_set *writefds,
+-	    fd_set *exceptfds, struct timeval *timeout);
+-
+ int	select(int n, fd_set *readfds, fd_set *writefds,
+ 	    fd_set *exceptfds, struct timeval *timeout);
+ 
+-- 
+2.25.0
+
