@@ -19,7 +19,11 @@ done
 cat << EOF1 > psp-gcc
 #!/bin/sh
 DIR=\$(dirname \$(readlink -f "\$0"))
-"\$DIR"/mipsallegrexel-psp-elf-gcc "\$@" -L"\$DIR"/../psp/sdk/lib -lgcc -lm \
+"\$DIR"/mipsallegrexel-psp-elf-gcc \
+-I"\$DIR"/../psp/include -I"\$DIR"/../psp/sdk/include \
+"\$@" \
+-L"\$DIR"/../psp/sdk/lib -L"\$DIR"/../psp/lib \
+-lgcc -lm \
 -Wl,--start-group -lcglue -lc -Wl,--end-group \
 -lpsputility -lpsprtc -lpspnet_inet -lpspnet_resolver -lpspmodinfo \
 -lpspuser -lpspkernel -lgcc
