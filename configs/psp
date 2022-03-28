@@ -38,7 +38,7 @@ git checkout cc887d731f635e06fba85118eb5c7ee87746cbc8 # known good version
 export PATH="\$PATH:$CC_BASE_PREFIX/$TRIPLE/bin"
 ./configure --with-pspdev=$CC_BASE_PREFIX/$TRIPLE
 make && make install-data install
-cp $CC_BASE_PREFIX/$TRIPLE/psp/lib/crt0.o $CC_BASE_PREFIX/$TRIPLE/$TRIPLE/lib
+cp $CC_BASE_PREFIX/$TRIPLE/psp/lib/crt*.o $CC_BASE_PREFIX/$TRIPLE/$TRIPLE/lib
 *****************************************************************************
 EOF
 }
