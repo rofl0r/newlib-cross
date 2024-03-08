@@ -1,0 +1,271 @@
+From 91aa9adc67e6d4d9c67b3b6906a6bc21c5f3fdee Mon Sep 17 00:00:00 2001
+From: Francisco Javier Trujillo Mata <fran.t.es@sync.money>
+Date: Sat, 27 Feb 2021 12:31:03 +0100
+Subject: [PATCH] Making a clean PSP port
+
+- Add missing fields to dirent
+- Add _POSIX_MONOTONIC_CLOCK to features
+- Add statvfs file
+---
+ config.sub                         |  5 ++--
+ configure                          |  3 +++
+ newlib/configure.host              | 13 ++++++++++
+ newlib/libc/acinclude.m4           |  1 +
+ newlib/libc/include/sys/features.h |  5 ++++
+ newlib/libc/sys/Makefile.inc       |  3 +++
+ newlib/libc/sys/psp/Makefile.inc   |  1 +
+ newlib/libc/sys/psp/crt0.c         |  3 +++
+ newlib/libc/sys/psp/dummy.c        |  4 +++
+ newlib/libc/sys/psp/sys/dirent.h   | 41 ++++++++++++++++++++++++++++++
+ newlib/libc/sys/psp/sys/statvfs.h  | 34 +++++++++++++++++++++++++
+ 11 files changed, 111 insertions(+), 2 deletions(-)
+ create mode 100644 newlib/libc/sys/psp/Makefile.inc
+ create mode 100644 newlib/libc/sys/psp/crt0.c
+ create mode 100644 newlib/libc/sys/psp/dummy.c
+ create mode 100644 newlib/libc/sys/psp/sys/dirent.h
+ create mode 100644 newlib/libc/sys/psp/sys/statvfs.h
+
+diff --git a/config.sub b/config.sub
+index 63c1f1c8b..e77b3cbad 100755
+--- a/config.sub
++++ b/config.sub
+@@ -477,8 +477,8 @@ case $1 in
+ 				basic_os=linux
+ 				;;
+ 			psp)
+-				basic_machine=mipsallegrexel-sony
+-				basic_os=psp
++				basic_machine=mipsallegrexel-psp
++				basic_os=elf
+ 				;;
+ 			pw32)
+ 				basic_machine=i586-unknown
+@@ -1202,6 +1202,7 @@ case $cpu-$vendor in
+ 			| mips64vr4300 | mips64vr4300el \
+ 			| mips64vr5000 | mips64vr5000el \
+ 			| mips64vr5900 | mips64vr5900el \
++			| mipsallegrexel \
+ 			| mipsisa32 | mipsisa32el \
+ 			| mipsisa32r2 | mipsisa32r2el \
+ 			| mipsisa32r6 | mipsisa32r6el \
+diff --git a/configure b/configure
+index eb0ba840b..fea819e0c 100755
+--- a/configure
++++ b/configure
+@@ -3971,6 +3971,9 @@ case "${target}" in
+   | mips*-*-irix* | mips*-*-lnews* | mips*-*-riscos*)
+     noconfigdirs="$noconfigdirs ld gas gprof"
+     ;;
++  mips*-psp-*)
++    noconfigdirs="$noconfigdirs gprof target-libgloss"
++    ;;
+   mips*-*-*)
+     noconfigdirs="$noconfigdirs gprof"
+     ;;
+diff --git a/newlib/configure.host b/newlib/configure.host
+index 386183466..80e78606b 100644
+--- a/newlib/configure.host
++++ b/newlib/configure.host
+@@ -245,6 +245,10 @@ case "${host_cpu}" in
+   mep)
+ 	machine_dir=mep
+ 	;;
++  mipsallegrex*)
++	machine_dir=mips
++	newlib_cflags="${newlib_cflags} -mno-gpopt -DMALLOC_ALIGNMENT=16"
++	;;
+   mips*)
+ 	machine_dir=mips
+ 	libm_machine_dir=mips
+@@ -527,6 +531,11 @@ case "${host}" in
+   microblaze*-*-*)
+ 	machine_dir=microblaze
+ 	;;
++  mips*-psp-*)
++  	sys_dir=psp
++  	posix_dir=posix
++  	newlib_cflags="${newlib_cflags} -DHAVE_NANOSLEEP -DHAVE_RENAME -DHAVE_FCNTL -D_NO_POSIX_SPAWN"
++	;;
+   mmix-knuth-mmixware)
+ 	sys_dir=mmixware
+ 	;;
+@@ -769,6 +778,10 @@ newlib_cflags="${newlib_cflags} -DCLOCK_PROVIDED -DMALLOC_PROVIDED -DEXIT_PROVID
+ 	default_newlib_io_long_long="yes"
+ 	newlib_cflags="${newlib_cflags} -DMISSING_SYSCALL_NAMES"
+ 	;;
++  mips*-psp-elf*)
++	syscall_dir=syscalls
++	default_newlib_io_long_long="yes"
++	;;
+   mips*-*-elf*)
+ 	default_newlib_io_long_long="yes"
+ 	newlib_cflags="${newlib_cflags} -DMISSING_SYSCALL_NAMES"
+diff --git a/newlib/libc/acinclude.m4 b/newlib/libc/acinclude.m4
+index 24148b13f..48b86e7a8 100644
+--- a/newlib/libc/acinclude.m4
++++ b/newlib/libc/acinclude.m4
+@@ -19,6 +19,7 @@ m4_foreach_w([SYS_DIR], [
+   m88kbug mmixware
+   netware
+   or1k
++  psp
+   rdos rtems
+   sh sysmec sysnec810 sysnecv850 sysvi386 sysvnecv70
+   tic80 tirtos
+diff --git a/newlib/libc/include/sys/features.h b/newlib/libc/include/sys/features.h
+index a7d4bc52d..1eb5dfc16 100644
+--- a/newlib/libc/include/sys/features.h
++++ b/newlib/libc/include/sys/features.h
+@@ -545,6 +545,11 @@ extern "C" {
+ 
+ #endif /* __CYGWIN__ */
+ 
++#ifdef _MIPS_ARCH_ALLEGREX
++# define _POSIX_TIMERS				1
++# define _POSIX_MONOTONIC_CLOCK			200112L
++#endif
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/newlib/libc/sys/Makefile.inc b/newlib/libc/sys/Makefile.inc
+index 24d8407d5..c6b3d4d41 100644
+--- a/newlib/libc/sys/Makefile.inc
++++ b/newlib/libc/sys/Makefile.inc
+@@ -31,6 +31,9 @@ endif
+ if HAVE_LIBC_SYS_OR1K_DIR
+ include %D%/or1k/Makefile.inc
+ endif
++if HAVE_LIBC_SYS_PSP_DIR
++include %D%/psp/Makefile.inc
++endif
+ if HAVE_LIBC_SYS_RDOS_DIR
+ include %D%/rdos/Makefile.inc
+ endif
+diff --git a/newlib/libc/sys/psp/Makefile.inc b/newlib/libc/sys/psp/Makefile.inc
+new file mode 100644
+index 000000000..641ac1e35
+--- /dev/null
++++ b/newlib/libc/sys/psp/Makefile.inc
+@@ -0,0 +1 @@
++libc_a_SOURCES += %D%/dummy.c
+\ No newline at end of file
+diff --git a/newlib/libc/sys/psp/crt0.c b/newlib/libc/sys/psp/crt0.c
+new file mode 100644
+index 000000000..af6712c20
+--- /dev/null
++++ b/newlib/libc/sys/psp/crt0.c
+@@ -0,0 +1,3 @@
++/* The real crt0.c lives in PSPSDK. */
++
++void _start() { }
+diff --git a/newlib/libc/sys/psp/dummy.c b/newlib/libc/sys/psp/dummy.c
+new file mode 100644
+index 000000000..ac5ad04f9
+--- /dev/null
++++ b/newlib/libc/sys/psp/dummy.c
+@@ -0,0 +1,4 @@
++/* Dummy file to make sure we have at least one object file in the library.  
++ * Otherwise we were suffering an error compiling newlib. 
++ * Most probably it is a issue in the newlib itself.
++*/
+\ No newline at end of file
+diff --git a/newlib/libc/sys/psp/sys/dirent.h b/newlib/libc/sys/psp/sys/dirent.h
+new file mode 100644
+index 000000000..e7a6434f6
+--- /dev/null
++++ b/newlib/libc/sys/psp/sys/dirent.h
+@@ -0,0 +1,41 @@
++#ifndef _SYS_DIRENT_H
++#define _SYS_DIRENT_H
++
++typedef struct __dirdesc {
++	int dd_fd;		/* directory file */
++    int dd_loc;		/* position in buffer */
++    int dd_seek;
++    char *dd_buf;	/* buffer */
++    int dd_len;		/* buffer length */
++    int dd_size;	/* amount of data in buffer */
++} DIR;
++
++# define __dirfd(dp)	((dp)->dd_fd)
++
++#include <sys/stat.h>
++
++#undef  MAXNAMLEN	/* from unistd.h */
++#define MAXNAMLEN	255
++
++#define d_ino	d_fileno	/* compatibility */
++
++struct dirent {
++	ino_t      d_fileno;		    /* file number of entry */
++    off_t          d_off;           /* Not an offset; see below */
++	unsigned short int d_reclen;    /* Length of this record */
++    unsigned char  d_type;          /* Type of file; not supported 
++                                       by all filesystem types */
++	char d_name[MAXNAMLEN + 1];
++};
++
++#define	DT_UNKNOWN	 0
++#define	DT_FIFO		 1
++#define	DT_CHR		 2
++#define	DT_DIR		 4
++#define	DT_BLK		 6
++#define	DT_REG		 8
++#define	DT_LNK		10
++#define	DT_SOCK		12
++#define	DT_WHT		14
++
++#endif
+\ No newline at end of file
+diff --git a/newlib/libc/sys/psp/sys/statvfs.h b/newlib/libc/sys/psp/sys/statvfs.h
+new file mode 100644
+index 000000000..ed9b82f8d
+--- /dev/null
++++ b/newlib/libc/sys/psp/sys/statvfs.h
+@@ -0,0 +1,34 @@
++#ifndef _SYS_STATVFS_H_
++#define _SYS_STATVFS_H_
++
++#include <sys/types.h>
++
++#define ST_RDONLY 0x80000    /* equals FILE_READ_ONLY_VOLUME */
++#define ST_NOSUID 0        /* Looking for that bit should always fail. */
++
++struct statvfs {
++   unsigned long    f_bsize;    /* file system block size */
++   unsigned long    f_frsize;   /* fragment size */
++   fsblkcnt_t        f_blocks;   /* size of fs in f_frsize units */
++   fsblkcnt_t        f_bfree;    /* free blocks in fs */
++   fsblkcnt_t        f_bavail;   /* free blocks avail to non-superuser */
++   fsfilcnt_t        f_files;    /* total file nodes in file system */
++   fsfilcnt_t        f_ffree;    /* free file nodes in fs */
++   fsfilcnt_t        f_favail;   /* avail file nodes in fs */
++   unsigned long    f_fsid;     /* file system id */
++   unsigned long    f_flag;    /* mount flags */
++   unsigned long    f_namemax;  /* maximum length of filenames */
++};
++
++#ifdef __cplusplus
++extern "C" {
++#endif /* __cplusplus */
++
++int statvfs (const char *__path, struct statvfs *__buf);
++int fstatvfs (int __fd, struct statvfs *__buf);
++
++#ifdef __cplusplus
++};
++#endif /* __cplusplus */
++
++#endif /*_SYS_STATVFS_H_*/
+diff --git a/mipsallegrexel-psp-elf/newlib/libc/sys/psp/.deps/dummy.txt b/mipsallegrexel-psp-elf/newlib/libc/sys/psp/.deps/dummy.txt
+new file mode 100644
+index 000000000..ac5ad04f9
+--- /dev/null
++++ b/mipsallegrexel-psp-elf/newlib/libc/sys/psp/.deps/dummy.txt
+@@ -0,0 +1,4 @@
++/* Dummy file to make sure we have at least one object file in the library.  
++ * Otherwise we were suffering an error compiling newlib. 
++ * Most probably it is a issue in the newlib itself.
++*/
+\ No newline at end of file

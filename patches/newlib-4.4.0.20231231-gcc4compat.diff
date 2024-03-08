@@ -1,0 +1,115 @@
+From 84391b08e9245df80dd976f6179f42710ae2fc9a Mon Sep 17 00:00:00 2001
+From: rofl0r <rofl0r@users.noreply.github.com>
+Date: Thu, 17 Mar 2022 01:45:34 +0000
+Subject: [PATCH] newlib 4.1.0 compat fixes for gcc < 5
+
+---
+ newlib/libc/include/sys/_intsup.h | 27 +++++++++++++++++++++++++++
+ newlib/libc/stdlib/_mallocr.c      |  9 +++++++++
+ newlib/libc/stdlib/nano-mallocr.c | 10 ++++++++++
+ newlib/libc/stdlib/reallocarray.c | 10 ++++++++++
+ 4 files changed, 56 insertions(+)
+
+diff --git a/newlib/libc/include/sys/_intsup.h b/newlib/libc/include/sys/_intsup.h
+index 993121b..af3a683 100644
+--- a/newlib/libc/include/sys/_intsup.h
++++ b/newlib/libc/include/sys/_intsup.h
+@@ -78,6 +78,33 @@
+ #error "Unable to determine type definition of int32_t"
+ #endif
+ 
++#ifndef __INT64_TYPE__
++#define __INT64_TYPE__ long long
++#define __UINT64_TYPE__ unsigned long long
++#endif
++#ifndef __INT_FAST32_TYPE__
++
++#define __INT_FAST64_TYPE__ long long
++#define __INT_FAST32_TYPE__ int
++#define __INT_FAST16_TYPE__ int
++#define __INT_FAST8_TYPE__ signed char
++
++#define __UINT_FAST64_TYPE__ unsigned long long
++#define __UINT_FAST32_TYPE__ unsigned int
++#define __UINT_FAST16_TYPE__ unsigned int
++#define __UINT_FAST8_TYPE__ unsigned char
++
++#define __INT_LEAST8_TYPE__ signed char
++#define __INT_LEAST16_TYPE__ signed short
++#define __INT_LEAST32_TYPE__ int
++#define __INT_LEAST64_TYPE__ long long
++
++#define __UINT_LEAST8_TYPE__ unsigned char
++#define __UINT_LEAST16_TYPE__ unsigned short
++#define __UINT_LEAST32_TYPE__ unsigned int
++#define __UINT_LEAST64_TYPE__ unsigned long long
++#endif
++
+ #if (__INT8_TYPE__ == 0)
+ #define __INT8 "hh"
+ #elif (__INT8_TYPE__ == 1 || __INT8_TYPE__ == 3)
+diff --git a/newlib/libc/stdlib/_mallocr.c b/newlib/libc/stdlib/_mallocr.c
+index 13d014c..0f58f45 100644
+--- a/newlib/libc/stdlib/_mallocr.c
++++ b/newlib/libc/stdlib/_mallocr.c
+@@ -3182,6 +3182,15 @@ Void_t* pvALLOc(RARG bytes) RDECL size_t bytes;
+ 
+ #endif /* DEFINE_PVALLOC */
+ 
++#if __GNUC__ + 0 < 5
++static inline int __builtin_mul_overflow(INTERNAL_SIZE_T a, INTERNAL_SIZE_T b,
++	INTERNAL_SIZE_T *res) {
++	*res = a * b;
++	if(*res < a || *res < b) return 1;
++	return 0;
++}
++#endif
++
+ #ifdef DEFINE_CALLOC
+ 
+ /*
+diff --git a/newlib/libc/stdlib/nano-mallocr.c b/newlib/libc/stdlib/nano-mallocr.c
+index 1e07039..0ccfd3b 100644
+--- a/newlib/libc/stdlib/nano-mallocr.c
++++ b/newlib/libc/stdlib/nano-mallocr.c
+@@ -443,6 +443,16 @@ void nano_cfree(RARG void * ptr)
+ #endif /* DEFINE_CFREE */
+ 
+ #ifdef DEFINE_CALLOC
++
++#if __GNUC__ + 0 < 5 
++static inline int __builtin_mul_overflow(INTERNAL_SIZE_T a, INTERNAL_SIZE_T b,  
++        INTERNAL_SIZE_T *res) {
++        *res = a * b;
++        if(*res < a || *res < b) return 1;
++        return 0;
++}
++#endif
++
+ /* Function nano_calloc
+  * Implement calloc simply by calling malloc and set zero */
+ void * nano_calloc(RARG malloc_size_t n, malloc_size_t elem)
+diff --git a/newlib/libc/stdlib/reallocarray.c b/newlib/libc/stdlib/reallocarray.c
+index d1f63c6..62b4060 100644
+--- a/newlib/libc/stdlib/reallocarray.c
++++ b/newlib/libc/stdlib/reallocarray.c
+@@ -21,6 +21,16 @@
+ #include <stdint.h>
+ #include <stdlib.h>
+ 
++#if __GNUC__ + 0 < 5 
++static inline int __builtin_mul_overflow(size_t a, size_t b,  
++        size_t *res) {
++        *res = a * b;
++        if(*res < a || *res < b) return 1;
++        return 0;
++}
++#endif
++
++
+ void *
+ reallocarray(void *optr, size_t nmemb, size_t size)
+ {
+-- 
+2.25.0
+
