@@ -1,0 +1,1837 @@
+diff --git a/config.sub b/config.sub
+index 38f3d037a78..41942ba061a 100755
+--- a/config.sub
++++ b/config.sub
+@@ -491,10 +491,6 @@ case $1 in
+ 				basic_machine=hppa-unknown
+ 				basic_os=linux
+ 				;;
+-			psp)
+-				basic_machine=mipsallegrexel-sony
+-				basic_os=psp
+-				;;
+ 			pw32)
+ 				basic_machine=i586-unknown
+ 				basic_os=pw32
+@@ -647,6 +643,10 @@ case $1 in
+ 				basic_machine=ymp-cray
+ 				basic_os=unicos
+ 				;;
++			psp)
++				basic_machine=mipsallegrexel-psp
++				os=elf
++				;;
+ 			*)
+ 				basic_machine=$1
+ 				basic_os=
+@@ -659,6 +659,10 @@ esac
+ case $basic_machine in
+ 	# Here we handle the default manufacturer of certain CPU types.  It is in
+ 	# some cases the only manufacturer, in others, it is the most popular.
++	mipsallegrexel-*)
++		cpu=mipsallegrexel
++		vendor=psp
++		;;
+ 	w89k)
+ 		cpu=hppa1.1
+ 		vendor=winbond
+@@ -1161,10 +1165,6 @@ case $cpu-$vendor in
+ 		cpu=nsx
+ 		vendor=tandem
+ 		;;
+-	mipsallegrexel-sony)
+-		cpu=mipsallegrexel
+-		vendor=sony
+-		;;
+ 	tile*-*)
+ 		basic_os=${basic_os:-linux-gnu}
+ 		;;
+@@ -1233,6 +1233,7 @@ case $cpu-$vendor in
+ 			| mipsisa64sr71k | mipsisa64sr71kel \
+ 			| mipsr5900 | mipsr5900el \
+ 			| mipstx39 | mipstx39el \
++			| mipsallegrex | mipsallegrexel \
+ 			| mmix \
+ 			| mn10200 | mn10300 \
+ 			| moxie \
+diff --git a/config/mt-allegrex-psp b/config/mt-allegrex-psp
+new file mode 100644
+index 00000000000..34d52a18b50
+--- /dev/null
++++ b/config/mt-allegrex-psp
+@@ -0,0 +1,3 @@
++# Disable use of GP-relative addressing
++CFLAGS_FOR_TARGET += -mno-gpopt
++CXXFLAGS_FOR_TARGET += -mno-gpopt
+diff --git a/configure b/configure
+index 117a7ef23f2..b05c21b9430 100755
+--- a/configure
++++ b/configure
+@@ -9578,6 +9578,9 @@ case "${target}" in
+     extra_arflags_for_target=" -X32_64"
+     extra_nmflags_for_target=" -B -X32_64"
+     ;;
++  mipsallegrex*-psp-elf*)
++    target_makefile_frag="config/mt-allegrex-psp"
++    ;;
+ esac
+ 
+ alphaieee_frag=/dev/null
+diff --git a/configure.ac b/configure.ac
+index b3e9bbd2aa5..180a3a222e4 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -2739,6 +2739,9 @@ case "${target}" in
+     extra_arflags_for_target=" -X32_64"
+     extra_nmflags_for_target=" -B -X32_64"
+     ;;
++  mipsallegrex*-psp-elf*)
++    target_makefile_frag="config/mt-allegrex-psp"
++    ;;
+ esac
+ 
+ alphaieee_frag=/dev/null
+diff --git a/gcc/config.gcc b/gcc/config.gcc
+index 648b3dc2110..44ad1211a18 100644
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -2717,6 +2717,17 @@ mipstx39-*-elf* | mipstx39el-*-elf*)
+ 	tm_file="elfos.h newlib-stdint.h ${tm_file} mips/r3900.h mips/elf.h"
+ 	tmake_file="mips/t-r3900"
+ 	;;
++mipsallegrex-*-elf* | mipsallegrexel-*-elf*)
++	tm_file="elfos.h newlib-stdint.h ${tm_file} mips/elf.h"
++	tmake_file="${tmake_file} mips/t-elf"
++	target_cpu_default="MASK_SINGLE_FLOAT|MASK_DIVIDE_BREAKS"
++	tm_defines="${tm_defines} MIPS_ISA_DEFAULT=2 MIPS_CPU_STRING_DEFAULT=\\\"allegrex\\\" MIPS_ABI_DEFAULT=ABI_EABI"
++	case ${target} in
++	mipsallegrex*-psp-elf*)
++		tm_file="${tm_file} mips/psp.h"
++		;;
++	esac
++	;;
+ mmix-knuth-mmixware)
+ 	tm_file="${tm_file} newlib-stdint.h"
+ 	use_gcc_stdint=wrap
+@@ -4048,8 +4059,9 @@ fi
+ # Infer a default setting for --with-fpu.
+ if test x$with_fpu = x; then
+   case ${target} in
+-    mips64r5900-*-* | mips64r5900el-*-* | mipsr5900-*-* | mipsr5900el-*-*)
+-      # The R5900 FPU only supports single precision.
++    mips64r5900-*-* | mips64r5900el-*-* | mipsr5900-*-* | mipsr5900el-*-* | \
++    mipsallegrex-*-* | mipsallegrexel-*-*)
++      # The R5900 and Allegrex FPU only supports single precision.
+       with_fpu=single
+       ;;
+   esac
+diff --git a/gcc/config/mips/allegrex.md b/gcc/config/mips/allegrex.md
+new file mode 100644
+index 00000000000..e9ae897bb18
+--- /dev/null
++++ b/gcc/config/mips/allegrex.md
+@@ -0,0 +1,145 @@
++;; Sony ALLEGREX instructions.
++;; Copyright (C) 2005 Free Software Foundation, Inc.
++;;
++;; This file is part of GCC.
++;;
++;; GCC is free software; you can redistribute it and/or modify
++;; it under the terms of the GNU General Public License as published by
++;; the Free Software Foundation; either version 2, or (at your option)
++;; any later version.
++;;
++;; GCC is distributed in the hope that it will be useful,
++;; but WITHOUT ANY WARRANTY; without even the implied warranty of
++;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++;; GNU General Public License for more details.
++;;
++;; You should have received a copy of the GNU General Public License
++;; along with GCC; see the file COPYING.  If not, write to
++;; the Free Software Foundation, 59 Temple Place - Suite 330,
++;; Boston, MA 02111-1307, USA.
++
++(define_c_enum "unspec" [
++  UNSPEC_CLO
++  UNSPEC_CTO
++  UNSPEC_CACHE
++  UNSPEC_CEIL_W_S
++  UNSPEC_FLOOR_W_S
++  UNSPEC_ROUND_W_S
++])
++
++;; Min and max.
++
++(define_insn "sminsi3"
++  [(set (match_operand:SI 0 "register_operand" "=d")
++        (smin:SI (match_operand:SI 1 "register_operand" "d")
++                 (match_operand:SI 2 "register_operand" "d")))]
++  "TARGET_ALLEGREX"
++  "min\t%0,%1,%2"
++  [(set_attr "type"    "arith")
++   (set_attr "mode"    "SI")])
++
++(define_insn "smaxsi3"
++  [(set (match_operand:SI 0 "register_operand" "=d")
++        (smax:SI (match_operand:SI 1 "register_operand" "d")
++                 (match_operand:SI 2 "register_operand" "d")))]
++  "TARGET_ALLEGREX"
++  "max\t%0,%1,%2"
++  [(set_attr "type"    "arith")
++   (set_attr "mode"    "SI")])
++
++
++;; Extended shift instructions.
++
++(define_insn "allegrex_bitrevsi2"
++  [(set (match_operand:SI 0 "register_operand" "=d")
++   (unspec:SI [(match_operand:SI 1 "register_operand" "d")]
++          UNSPEC_BITREV))]
++  "TARGET_ALLEGREX"
++  "bitrev\t%0,%1"
++  [(set_attr "type"    "arith")
++   (set_attr "mode"    "SI")])
++
++
++;; Count leading ones, count trailing zeros, and count trailing ones (clz is
++;; already defined).
++
++(define_insn "allegrex_closi2"
++  [(set (match_operand:SI 0 "register_operand" "=d")
++       (unspec:SI [(match_operand:SI 1 "register_operand" "d")]
++          UNSPEC_CLO))]
++  "TARGET_ALLEGREX"
++  "clo\t%0,%1"
++  [(set_attr "type"    "clz")
++   (set_attr "mode"    "SI")])
++
++
++(define_expand "allegrex_ctzsi2"
++  [(set (match_operand:SI 0 "register_operand")
++       (ctz:SI (match_operand:SI 1 "register_operand")))]
++  "TARGET_ALLEGREX"
++{
++  emit_insn (gen_allegrex_bitrevsi2 (operands[0], operands[1]));
++  emit_insn (gen_clzsi2 (operands[0], operands[0]));
++  DONE;
++})
++
++(define_expand "allegrex_ctosi2"
++  [(set (match_operand:SI 0 "register_operand")
++       (unspec:SI [(match_operand:SI 1 "register_operand")]
++          UNSPEC_CTO))]
++  "TARGET_ALLEGREX"
++{
++  emit_insn (gen_allegrex_bitrevsi2 (operands[0], operands[1]));
++  emit_insn (gen_allegrex_closi2 (operands[0], operands[0]));
++  DONE;
++})
++
++
++;; Misc.
++
++(define_insn "allegrex_sync"
++  [(unspec_volatile [(const_int 0)] UNSPEC_SYNC)]
++  "TARGET_ALLEGREX"
++  "sync"
++  [(set_attr "type"    "unknown")
++   (set_attr "mode"    "none")])
++
++(define_insn "allegrex_cache"
++  [(unspec_volatile [(match_operand:SI 0 "const_int_operand" "")
++            (match_operand:SI 1 "register_operand" "d")]
++           UNSPEC_CACHE)]
++  "TARGET_ALLEGREX"
++  "cache\t%0,0(%1)"
++  [(set_attr "type"    "unknown")
++   (set_attr "mode"    "none")])
++
++
++;; Floating-point builtins.
++
++(define_insn "allegrex_ceilsfsi2"
++  [(set (match_operand:SI 0 "register_operand" "=f")
++       (unspec:SI [(match_operand:SF 1 "register_operand" "f")]
++          UNSPEC_CEIL_W_S))]
++  "TARGET_ALLEGREX"
++  "ceil.w.s\t%0,%1"
++  [(set_attr "type"    "fcvt")
++   (set_attr "mode"    "SF")])
++
++(define_insn "allegrex_floorsfsi2"
++  [(set (match_operand:SI 0 "register_operand" "=f")
++       (unspec:SI [(match_operand:SF 1 "register_operand" "f")]
++          UNSPEC_FLOOR_W_S))]
++  "TARGET_ALLEGREX"
++  "floor.w.s\t%0,%1"
++  [(set_attr "type"    "fcvt")
++   (set_attr "mode"    "SF")])
++
++(define_insn "allegrex_roundsfsi2"
++  [(set (match_operand:SI 0 "register_operand" "=f")
++       (unspec:SI [(match_operand:SF 1 "register_operand" "f")]
++          UNSPEC_ROUND_W_S))]
++  "TARGET_ALLEGREX"
++  "round.w.s\t%0,%1"
++  [(set_attr "type"    "fcvt")
++   (set_attr "mode"    "SF")])
++
+diff --git a/gcc/config/mips/mips-cpus.def b/gcc/config/mips/mips-cpus.def
+index e2fcb8527ae..4deb7d32d15 100644
+--- a/gcc/config/mips/mips-cpus.def
++++ b/gcc/config/mips/mips-cpus.def
+@@ -62,6 +62,7 @@ MIPS_CPU ("r3900", PROCESSOR_R3900, MIPS_ISA_MIPS1, 0)
+ 
+ /* MIPS II processors.  */
+ MIPS_CPU ("r6000", PROCESSOR_R6000, MIPS_ISA_MIPS2, 0)
++MIPS_CPU ("allegrex", PROCESSOR_ALLEGREX, MIPS_ISA_MIPS2, 0)
+ 
+ /* MIPS III processors.  */
+ MIPS_CPU ("r4000", PROCESSOR_R4000, MIPS_ISA_MIPS3, 0)
+diff --git a/gcc/config/mips/mips-ftypes.def b/gcc/config/mips/mips-ftypes.def
+index b94788df5de..b9d8d131a08 100644
+--- a/gcc/config/mips/mips-ftypes.def
++++ b/gcc/config/mips/mips-ftypes.def
+@@ -48,6 +48,8 @@ DEF_MIPS_FTYPE (2, (DI, SI, SI))
+ DEF_MIPS_FTYPE (2, (DI, USI, USI))
+ DEF_MIPS_FTYPE (2, (DI, V2DI, UQI))
+ 
++DEF_MIPS_FTYPE (1, (HI, HI))
++
+ DEF_MIPS_FTYPE (2, (INT, DF, DF))
+ DEF_MIPS_FTYPE (2, (INT, SF, SF))
+ DEF_MIPS_FTYPE (2, (INT, V2SF, V2SF))
+@@ -59,7 +61,10 @@ DEF_MIPS_FTYPE (1, (SF, V2SF))
+ DEF_MIPS_FTYPE (1, (SF, V4SF))
+ 
+ DEF_MIPS_FTYPE (2, (SI, DI, SI))
++DEF_MIPS_FTYPE (1, (SI, HI))
+ DEF_MIPS_FTYPE (2, (SI, POINTER, SI))
++DEF_MIPS_FTYPE (1, (SI, QI))
++DEF_MIPS_FTYPE (1, (SI, SF))
+ DEF_MIPS_FTYPE (1, (SI, SI))
+ DEF_MIPS_FTYPE (2, (SI, SI, SI))
+ DEF_MIPS_FTYPE (3, (SI, SI, SI, SI))
+@@ -284,3 +289,4 @@ DEF_MIPS_FTYPE (2, (VOID, V4QI, V4QI))
+ DEF_MIPS_FTYPE (3, (VOID, V4SF, POINTER, SI))
+ DEF_MIPS_FTYPE (3, (VOID, V4SI, CVPOINTER, SI))
+ DEF_MIPS_FTYPE (3, (VOID, V8HI, CVPOINTER, SI))
++DEF_MIPS_FTYPE (1, (VOID, VOID))
+diff --git a/gcc/config/mips/mips-tables.opt b/gcc/config/mips/mips-tables.opt
+index f3be044d975..69eefbb2a06 100644
+--- a/gcc/config/mips/mips-tables.opt
++++ b/gcc/config/mips/mips-tables.opt
+@@ -160,554 +160,557 @@ EnumValue
+ Enum(mips_arch_opt_value) String(6k) Value(17)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4000) Value(18) Canonical
++Enum(mips_arch_opt_value) String(allegrex) Value(18) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4k) Value(18)
++Enum(mips_arch_opt_value) String(r4000) Value(19) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4000) Value(18)
++Enum(mips_arch_opt_value) String(r4k) Value(19)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4k) Value(18)
++Enum(mips_arch_opt_value) String(4000) Value(19)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(vr4100) Value(19) Canonical
++Enum(mips_arch_opt_value) String(4k) Value(19)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4100) Value(19)
++Enum(mips_arch_opt_value) String(vr4100) Value(20) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4100) Value(19)
++Enum(mips_arch_opt_value) String(4100) Value(20)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(vr4111) Value(20) Canonical
++Enum(mips_arch_opt_value) String(r4100) Value(20)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4111) Value(20)
++Enum(mips_arch_opt_value) String(vr4111) Value(21) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4111) Value(20)
++Enum(mips_arch_opt_value) String(4111) Value(21)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(vr4120) Value(21) Canonical
++Enum(mips_arch_opt_value) String(r4111) Value(21)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4120) Value(21)
++Enum(mips_arch_opt_value) String(vr4120) Value(22) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4120) Value(21)
++Enum(mips_arch_opt_value) String(4120) Value(22)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(vr4130) Value(22) Canonical
++Enum(mips_arch_opt_value) String(r4120) Value(22)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4130) Value(22)
++Enum(mips_arch_opt_value) String(vr4130) Value(23) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4130) Value(22)
++Enum(mips_arch_opt_value) String(4130) Value(23)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(vr4300) Value(23) Canonical
++Enum(mips_arch_opt_value) String(r4130) Value(23)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4300) Value(23)
++Enum(mips_arch_opt_value) String(vr4300) Value(24) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4300) Value(23)
++Enum(mips_arch_opt_value) String(4300) Value(24)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4400) Value(24) Canonical
++Enum(mips_arch_opt_value) String(r4300) Value(24)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4400) Value(24)
++Enum(mips_arch_opt_value) String(r4400) Value(25) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4600) Value(25) Canonical
++Enum(mips_arch_opt_value) String(4400) Value(25)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4600) Value(25)
++Enum(mips_arch_opt_value) String(r4600) Value(26) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(orion) Value(26) Canonical
++Enum(mips_arch_opt_value) String(4600) Value(26)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4650) Value(27) Canonical
++Enum(mips_arch_opt_value) String(orion) Value(27) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4650) Value(27)
++Enum(mips_arch_opt_value) String(r4650) Value(28) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4700) Value(28) Canonical
++Enum(mips_arch_opt_value) String(4650) Value(28)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4700) Value(28)
++Enum(mips_arch_opt_value) String(r4700) Value(29) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r5900) Value(29) Canonical
++Enum(mips_arch_opt_value) String(4700) Value(29)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(5900) Value(29)
++Enum(mips_arch_opt_value) String(r5900) Value(30) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(loongson2e) Value(30) Canonical
++Enum(mips_arch_opt_value) String(5900) Value(30)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(loongson2f) Value(31) Canonical
++Enum(mips_arch_opt_value) String(loongson2e) Value(31) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r8000) Value(32) Canonical
++Enum(mips_arch_opt_value) String(loongson2f) Value(32) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r8k) Value(32)
++Enum(mips_arch_opt_value) String(r8000) Value(33) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(8000) Value(32)
++Enum(mips_arch_opt_value) String(r8k) Value(33)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(8k) Value(32)
++Enum(mips_arch_opt_value) String(8000) Value(33)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r10000) Value(33) Canonical
++Enum(mips_arch_opt_value) String(8k) Value(33)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r10k) Value(33)
++Enum(mips_arch_opt_value) String(r10000) Value(34) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(10000) Value(33)
++Enum(mips_arch_opt_value) String(r10k) Value(34)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(10k) Value(33)
++Enum(mips_arch_opt_value) String(10000) Value(34)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r12000) Value(34) Canonical
++Enum(mips_arch_opt_value) String(10k) Value(34)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r12k) Value(34)
++Enum(mips_arch_opt_value) String(r12000) Value(35) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(12000) Value(34)
++Enum(mips_arch_opt_value) String(r12k) Value(35)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(12k) Value(34)
++Enum(mips_arch_opt_value) String(12000) Value(35)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r14000) Value(35) Canonical
++Enum(mips_arch_opt_value) String(12k) Value(35)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r14k) Value(35)
++Enum(mips_arch_opt_value) String(r14000) Value(36) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(14000) Value(35)
++Enum(mips_arch_opt_value) String(r14k) Value(36)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(14k) Value(35)
++Enum(mips_arch_opt_value) String(14000) Value(36)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r16000) Value(36) Canonical
++Enum(mips_arch_opt_value) String(14k) Value(36)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r16k) Value(36)
++Enum(mips_arch_opt_value) String(r16000) Value(37) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(16000) Value(36)
++Enum(mips_arch_opt_value) String(r16k) Value(37)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(16k) Value(36)
++Enum(mips_arch_opt_value) String(16000) Value(37)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(vr5000) Value(37) Canonical
++Enum(mips_arch_opt_value) String(16k) Value(37)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(vr5k) Value(37)
++Enum(mips_arch_opt_value) String(vr5000) Value(38) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(5000) Value(37)
++Enum(mips_arch_opt_value) String(vr5k) Value(38)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(5k) Value(37)
++Enum(mips_arch_opt_value) String(5000) Value(38)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r5000) Value(37)
++Enum(mips_arch_opt_value) String(5k) Value(38)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r5k) Value(37)
++Enum(mips_arch_opt_value) String(r5000) Value(38)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(vr5400) Value(38) Canonical
++Enum(mips_arch_opt_value) String(r5k) Value(38)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(5400) Value(38)
++Enum(mips_arch_opt_value) String(vr5400) Value(39) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r5400) Value(38)
++Enum(mips_arch_opt_value) String(5400) Value(39)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(vr5500) Value(39) Canonical
++Enum(mips_arch_opt_value) String(r5400) Value(39)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(5500) Value(39)
++Enum(mips_arch_opt_value) String(vr5500) Value(40) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r5500) Value(39)
++Enum(mips_arch_opt_value) String(5500) Value(40)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(rm7000) Value(40) Canonical
++Enum(mips_arch_opt_value) String(r5500) Value(40)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(rm7k) Value(40)
++Enum(mips_arch_opt_value) String(rm7000) Value(41) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(7000) Value(40)
++Enum(mips_arch_opt_value) String(rm7k) Value(41)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(7k) Value(40)
++Enum(mips_arch_opt_value) String(7000) Value(41)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r7000) Value(40)
++Enum(mips_arch_opt_value) String(7k) Value(41)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r7k) Value(40)
++Enum(mips_arch_opt_value) String(r7000) Value(41)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(rm9000) Value(41) Canonical
++Enum(mips_arch_opt_value) String(r7k) Value(41)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(rm9k) Value(41)
++Enum(mips_arch_opt_value) String(rm9000) Value(42) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(9000) Value(41)
++Enum(mips_arch_opt_value) String(rm9k) Value(42)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(9k) Value(41)
++Enum(mips_arch_opt_value) String(9000) Value(42)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r9000) Value(41)
++Enum(mips_arch_opt_value) String(9k) Value(42)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r9k) Value(41)
++Enum(mips_arch_opt_value) String(r9000) Value(42)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4kc) Value(42) Canonical
++Enum(mips_arch_opt_value) String(r9k) Value(42)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4kc) Value(42)
++Enum(mips_arch_opt_value) String(4kc) Value(43) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4km) Value(43) Canonical
++Enum(mips_arch_opt_value) String(r4kc) Value(43)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4km) Value(43)
++Enum(mips_arch_opt_value) String(4km) Value(44) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4kp) Value(44) Canonical
++Enum(mips_arch_opt_value) String(r4km) Value(44)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4kp) Value(44)
++Enum(mips_arch_opt_value) String(4kp) Value(45) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4ksc) Value(45) Canonical
++Enum(mips_arch_opt_value) String(r4kp) Value(45)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4ksc) Value(45)
++Enum(mips_arch_opt_value) String(4ksc) Value(46) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(m4k) Value(46) Canonical
++Enum(mips_arch_opt_value) String(r4ksc) Value(46)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(m14kc) Value(47) Canonical
++Enum(mips_arch_opt_value) String(m4k) Value(47) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(m14k) Value(48) Canonical
++Enum(mips_arch_opt_value) String(m14kc) Value(48) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(m14ke) Value(49) Canonical
++Enum(mips_arch_opt_value) String(m14k) Value(49) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(m14kec) Value(50) Canonical
++Enum(mips_arch_opt_value) String(m14ke) Value(50) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4kec) Value(51) Canonical
++Enum(mips_arch_opt_value) String(m14kec) Value(51) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4kec) Value(51)
++Enum(mips_arch_opt_value) String(4kec) Value(52) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4kem) Value(52) Canonical
++Enum(mips_arch_opt_value) String(r4kec) Value(52)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4kem) Value(52)
++Enum(mips_arch_opt_value) String(4kem) Value(53) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4kep) Value(53) Canonical
++Enum(mips_arch_opt_value) String(r4kem) Value(53)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4kep) Value(53)
++Enum(mips_arch_opt_value) String(4kep) Value(54) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(4ksd) Value(54) Canonical
++Enum(mips_arch_opt_value) String(r4kep) Value(54)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r4ksd) Value(54)
++Enum(mips_arch_opt_value) String(4ksd) Value(55) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kc) Value(55) Canonical
++Enum(mips_arch_opt_value) String(r4ksd) Value(55)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kc) Value(55)
++Enum(mips_arch_opt_value) String(24kc) Value(56) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kf2_1) Value(56) Canonical
++Enum(mips_arch_opt_value) String(r24kc) Value(56)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kf2_1) Value(56)
++Enum(mips_arch_opt_value) String(24kf2_1) Value(57) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kf) Value(57) Canonical
++Enum(mips_arch_opt_value) String(r24kf2_1) Value(57)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kf) Value(57)
++Enum(mips_arch_opt_value) String(24kf) Value(58) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kf1_1) Value(58) Canonical
++Enum(mips_arch_opt_value) String(r24kf) Value(58)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kf1_1) Value(58)
++Enum(mips_arch_opt_value) String(24kf1_1) Value(59) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kfx) Value(59) Canonical
++Enum(mips_arch_opt_value) String(r24kf1_1) Value(59)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kfx) Value(59)
++Enum(mips_arch_opt_value) String(24kfx) Value(60) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kx) Value(60) Canonical
++Enum(mips_arch_opt_value) String(r24kfx) Value(60)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kx) Value(60)
++Enum(mips_arch_opt_value) String(24kx) Value(61) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kec) Value(61) Canonical
++Enum(mips_arch_opt_value) String(r24kx) Value(61)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kec) Value(61)
++Enum(mips_arch_opt_value) String(24kec) Value(62) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kef2_1) Value(62) Canonical
++Enum(mips_arch_opt_value) String(r24kec) Value(62)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kef2_1) Value(62)
++Enum(mips_arch_opt_value) String(24kef2_1) Value(63) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kef) Value(63) Canonical
++Enum(mips_arch_opt_value) String(r24kef2_1) Value(63)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kef) Value(63)
++Enum(mips_arch_opt_value) String(24kef) Value(64) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kef1_1) Value(64) Canonical
++Enum(mips_arch_opt_value) String(r24kef) Value(64)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kef1_1) Value(64)
++Enum(mips_arch_opt_value) String(24kef1_1) Value(65) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kefx) Value(65) Canonical
++Enum(mips_arch_opt_value) String(r24kef1_1) Value(65)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kefx) Value(65)
++Enum(mips_arch_opt_value) String(24kefx) Value(66) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(24kex) Value(66) Canonical
++Enum(mips_arch_opt_value) String(r24kefx) Value(66)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r24kex) Value(66)
++Enum(mips_arch_opt_value) String(24kex) Value(67) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(34kc) Value(67) Canonical
++Enum(mips_arch_opt_value) String(r24kex) Value(67)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r34kc) Value(67)
++Enum(mips_arch_opt_value) String(34kc) Value(68) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(34kf2_1) Value(68) Canonical
++Enum(mips_arch_opt_value) String(r34kc) Value(68)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r34kf2_1) Value(68)
++Enum(mips_arch_opt_value) String(34kf2_1) Value(69) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(34kf) Value(69) Canonical
++Enum(mips_arch_opt_value) String(r34kf2_1) Value(69)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r34kf) Value(69)
++Enum(mips_arch_opt_value) String(34kf) Value(70) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(34kf1_1) Value(70) Canonical
++Enum(mips_arch_opt_value) String(r34kf) Value(70)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r34kf1_1) Value(70)
++Enum(mips_arch_opt_value) String(34kf1_1) Value(71) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(34kfx) Value(71) Canonical
++Enum(mips_arch_opt_value) String(r34kf1_1) Value(71)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r34kfx) Value(71)
++Enum(mips_arch_opt_value) String(34kfx) Value(72) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(34kx) Value(72) Canonical
++Enum(mips_arch_opt_value) String(r34kfx) Value(72)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r34kx) Value(72)
++Enum(mips_arch_opt_value) String(34kx) Value(73) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(34kn) Value(73) Canonical
++Enum(mips_arch_opt_value) String(r34kx) Value(73)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r34kn) Value(73)
++Enum(mips_arch_opt_value) String(34kn) Value(74) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(74kc) Value(74) Canonical
++Enum(mips_arch_opt_value) String(r34kn) Value(74)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r74kc) Value(74)
++Enum(mips_arch_opt_value) String(74kc) Value(75) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(74kf2_1) Value(75) Canonical
++Enum(mips_arch_opt_value) String(r74kc) Value(75)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r74kf2_1) Value(75)
++Enum(mips_arch_opt_value) String(74kf2_1) Value(76) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(74kf) Value(76) Canonical
++Enum(mips_arch_opt_value) String(r74kf2_1) Value(76)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r74kf) Value(76)
++Enum(mips_arch_opt_value) String(74kf) Value(77) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(74kf1_1) Value(77) Canonical
++Enum(mips_arch_opt_value) String(r74kf) Value(77)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r74kf1_1) Value(77)
++Enum(mips_arch_opt_value) String(74kf1_1) Value(78) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(74kfx) Value(78) Canonical
++Enum(mips_arch_opt_value) String(r74kf1_1) Value(78)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r74kfx) Value(78)
++Enum(mips_arch_opt_value) String(74kfx) Value(79) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(74kx) Value(79) Canonical
++Enum(mips_arch_opt_value) String(r74kfx) Value(79)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r74kx) Value(79)
++Enum(mips_arch_opt_value) String(74kx) Value(80) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(74kf3_2) Value(80) Canonical
++Enum(mips_arch_opt_value) String(r74kx) Value(80)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r74kf3_2) Value(80)
++Enum(mips_arch_opt_value) String(74kf3_2) Value(81) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(1004kc) Value(81) Canonical
++Enum(mips_arch_opt_value) String(r74kf3_2) Value(81)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r1004kc) Value(81)
++Enum(mips_arch_opt_value) String(1004kc) Value(82) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(1004kf2_1) Value(82) Canonical
++Enum(mips_arch_opt_value) String(r1004kc) Value(82)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r1004kf2_1) Value(82)
++Enum(mips_arch_opt_value) String(1004kf2_1) Value(83) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(1004kf) Value(83) Canonical
++Enum(mips_arch_opt_value) String(r1004kf2_1) Value(83)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r1004kf) Value(83)
++Enum(mips_arch_opt_value) String(1004kf) Value(84) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(1004kf1_1) Value(84) Canonical
++Enum(mips_arch_opt_value) String(r1004kf) Value(84)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r1004kf1_1) Value(84)
++Enum(mips_arch_opt_value) String(1004kf1_1) Value(85) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(interaptiv) Value(85) Canonical
++Enum(mips_arch_opt_value) String(r1004kf1_1) Value(85)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(p5600) Value(86) Canonical
++Enum(mips_arch_opt_value) String(interaptiv) Value(86) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(m5100) Value(87) Canonical
++Enum(mips_arch_opt_value) String(p5600) Value(87) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(m5101) Value(88) Canonical
++Enum(mips_arch_opt_value) String(m5100) Value(88) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(5kc) Value(89) Canonical
++Enum(mips_arch_opt_value) String(m5101) Value(89) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r5kc) Value(89)
++Enum(mips_arch_opt_value) String(5kc) Value(90) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(5kf) Value(90) Canonical
++Enum(mips_arch_opt_value) String(r5kc) Value(90)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r5kf) Value(90)
++Enum(mips_arch_opt_value) String(5kf) Value(91) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(20kc) Value(91) Canonical
++Enum(mips_arch_opt_value) String(r5kf) Value(91)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(r20kc) Value(91)
++Enum(mips_arch_opt_value) String(20kc) Value(92) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(sb1) Value(92) Canonical
++Enum(mips_arch_opt_value) String(r20kc) Value(92)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(sb1a) Value(93) Canonical
++Enum(mips_arch_opt_value) String(sb1) Value(93) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(sr71000) Value(94) Canonical
++Enum(mips_arch_opt_value) String(sb1a) Value(94) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(sr71k) Value(94)
++Enum(mips_arch_opt_value) String(sr71000) Value(95) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(xlr) Value(95) Canonical
++Enum(mips_arch_opt_value) String(sr71k) Value(95)
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(loongson3a) Value(96) Canonical
++Enum(mips_arch_opt_value) String(xlr) Value(96) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(gs464) Value(97) Canonical
++Enum(mips_arch_opt_value) String(loongson3a) Value(97) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(gs464e) Value(98) Canonical
++Enum(mips_arch_opt_value) String(gs464) Value(98) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(gs264e) Value(99) Canonical
++Enum(mips_arch_opt_value) String(gs464e) Value(99) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(octeon) Value(100) Canonical
++Enum(mips_arch_opt_value) String(gs264e) Value(100) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(octeon+) Value(101) Canonical
++Enum(mips_arch_opt_value) String(octeon) Value(101) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(octeon2) Value(102) Canonical
++Enum(mips_arch_opt_value) String(octeon+) Value(102) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(octeon3) Value(103) Canonical
++Enum(mips_arch_opt_value) String(octeon2) Value(103) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(xlp) Value(104) Canonical
++Enum(mips_arch_opt_value) String(octeon3) Value(104) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(i6400) Value(105) Canonical
++Enum(mips_arch_opt_value) String(xlp) Value(105) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(i6500) Value(106) Canonical
++Enum(mips_arch_opt_value) String(i6400) Value(106) Canonical
+ 
+ EnumValue
+-Enum(mips_arch_opt_value) String(p6600) Value(107) Canonical
++Enum(mips_arch_opt_value) String(i6500) Value(107) Canonical
++
++EnumValue
++Enum(mips_arch_opt_value) String(p6600) Value(108) Canonical
+ 
+diff --git a/gcc/config/mips/mips.cc b/gcc/config/mips/mips.cc
+index ca822758b41..a1d83c5a759 100644
+--- a/gcc/config/mips/mips.cc
++++ b/gcc/config/mips/mips.cc
+@@ -265,7 +265,12 @@ enum mips_builtin_type {
+   MIPS_BUILTIN_MSA_TEST_BRANCH,
+ 
+   /* For generating bposge32 branch instructions in MIPS32 DSP ASE.  */
+-  MIPS_BUILTIN_BPOSGE32
++  MIPS_BUILTIN_BPOSGE32,
++
++  /* The builtin corresponds to the ALLEGREX cache instruction.  Operand 0
++     is the function code (must be less than 32) and operand 1 is the base
++     address.  */
++  MIPS_BUILTIN_CACHE
+ };
+ 
+ /* Invoke MACRO (COND) for each C.cond.fmt condition.  */
+@@ -471,6 +476,10 @@ struct mips_asm_switch mips_noat = { "at", 0 };
+    normal branch.  */
+ static bool mips_branch_likely;
+ 
++/* Preferred stack boundary for proper stack vars alignment */
++unsigned int mips_preferred_stack_boundary;
++unsigned int mips_preferred_stack_align;
++
+ /* The current instruction-set architecture.  */
+ enum processor mips_arch;
+ const struct mips_cpu_info *mips_arch_info;
+@@ -832,6 +841,9 @@ static const struct mips_rtx_cost_data
+ 		     1,           /* branch_cost */
+ 		     4            /* memory_latency */
+   },
++  { /* Allegrex */
++    DEFAULT_COSTS
++  },
+   { /* Loongson-2E */
+     DEFAULT_COSTS
+   },
+@@ -15428,6 +15440,7 @@ AVAIL_NON_MIPS16 (dsp_64, TARGET_64BIT && TARGET_DSP)
+ AVAIL_NON_MIPS16 (dspr2_32, !TARGET_64BIT && TARGET_DSPR2)
+ AVAIL_NON_MIPS16 (loongson, TARGET_LOONGSON_MMI)
+ AVAIL_NON_MIPS16 (cache, TARGET_CACHE_BUILTIN)
++AVAIL_NON_MIPS16 (allegrex, TARGET_ALLEGREX)
+ AVAIL_NON_MIPS16 (msa, TARGET_MSA)
+ 
+ /* Construct a mips_builtin_description from the given arguments.
+@@ -15534,6 +15547,24 @@ AVAIL_NON_MIPS16 (msa, TARGET_MSA)
+   MIPS_BUILTIN (bposge, f, "bposge" #VALUE,				\
+ 		MIPS_BUILTIN_BPOSGE ## VALUE, MIPS_SI_FTYPE_VOID, AVAIL, false)
+ 
++/* Same as the above, but mapped to an instruction that doesn't share the
++   NAME.  NAME is the name of the builtin without the builtin prefix.  */
++#define DIRECT_ALLEGREX_NAMED_BUILTIN(NAME, INSN, FUNCTION_TYPE, TARGET_FLAGS) \
++  { CODE_FOR_ ## INSN, MIPS_FP_COND_f, "__builtin_allegrex_" #NAME,             \
++    MIPS_BUILTIN_DIRECT, FUNCTION_TYPE, mips_builtin_avail_allegrex }
++
++/* Define a MIPS_BUILTIN_DIRECT_NO_TARGET function for instruction
++   CODE_FOR_allegrex_<INSN>.  FUNCTION_TYPE and TARGET_FLAGS are
++   builtin_description fields.  */
++#define DIRECT_ALLEGREX_NO_TARGET_BUILTIN(INSN, FUNCTION_TYPE, TARGET_FLAGS)   \
++  { CODE_FOR_allegrex_ ## INSN, MIPS_FP_COND_f, "__builtin_allegrex_" #INSN,            \
++    MIPS_BUILTIN_DIRECT_NO_TARGET, FUNCTION_TYPE, mips_builtin_avail_allegrex, false }
++
++/* Define a builtin with a specific function TYPE.  */
++#define SPECIAL_ALLEGREX_BUILTIN(TYPE, INSN, FUNCTION_TYPE, TARGET_FLAGS)  \
++  { CODE_FOR_allegrex_ ## INSN, MIPS_FP_COND_f, "__builtin_allegrex_" #INSN,            \
++    MIPS_BUILTIN_ ## TYPE, FUNCTION_TYPE, mips_builtin_avail_allegrex }
++
+ /* Define a Loongson MIPS_BUILTIN_DIRECT function __builtin_loongson_<FN_NAME>
+    for instruction CODE_FOR_loongson_<INSN>.  FUNCTION_TYPE is a
+    builtin_description field.  */
+@@ -16017,6 +16048,37 @@ static const struct mips_builtin_description mips_builtins[] = {
+   DIRECT_BUILTIN_PURE (dpsqx_s_w_ph, MIPS_DI_FTYPE_DI_V2HI_V2HI, dspr2_32),
+   DIRECT_BUILTIN_PURE (dpsqx_sa_w_ph, MIPS_DI_FTYPE_DI_V2HI_V2HI, dspr2_32),
+ 
++  /* Builtin functions for the Sony ALLEGREX processor.
++   These have the `__builtin_allegrex_' prefix instead of `__builtin_mips_'
++   to maintain compatibility with Sony's ALLEGREX GCC port.
++   Some of the builtins may seem redundant, but they are the same as the
++   builtins defined in the Sony compiler.  I chose to map redundant and
++   trivial builtins to the original instruction instead of creating
++   duplicate patterns specifically for the ALLEGREX (as Sony does).  */
++
++  DIRECT_ALLEGREX_NAMED_BUILTIN(bitrev, allegrex_bitrevsi2, MIPS_SI_FTYPE_SI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(clz, clzsi2, MIPS_SI_FTYPE_SI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(clo, allegrex_closi2, MIPS_SI_FTYPE_SI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(ctz, allegrex_ctzsi2, MIPS_SI_FTYPE_SI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(cto, allegrex_ctosi2, MIPS_SI_FTYPE_SI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(rotr, rotrsi3, MIPS_SI_FTYPE_SI_SI, 0),
++
++  DIRECT_ALLEGREX_NAMED_BUILTIN(seb, extendqisi2, MIPS_SI_FTYPE_QI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(seh, extendhisi2, MIPS_SI_FTYPE_HI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(max, smaxsi3, MIPS_SI_FTYPE_SI_SI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(min, sminsi3, MIPS_SI_FTYPE_SI_SI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(wsbw, bswapsi2, MIPS_SI_FTYPE_SI, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(wsbh, bswaphi2, MIPS_HI_FTYPE_HI, 0),
++
++  DIRECT_ALLEGREX_NO_TARGET_BUILTIN(sync, MIPS_VOID_FTYPE_VOID, 0),
++  SPECIAL_ALLEGREX_BUILTIN(CACHE, cache, MIPS_VOID_FTYPE_SI_SI, 0),
++
++  DIRECT_ALLEGREX_NAMED_BUILTIN(sqrt_s, sqrtsf2, MIPS_SF_FTYPE_SF, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(ceil_w_s, allegrex_ceilsfsi2, MIPS_SI_FTYPE_SF, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(floor_w_s, allegrex_floorsfsi2, MIPS_SI_FTYPE_SF, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(round_w_s, allegrex_roundsfsi2, MIPS_SI_FTYPE_SF, 0),
++  DIRECT_ALLEGREX_NAMED_BUILTIN(trunc_w_s, fix_truncsfsi2_insn, MIPS_SI_FTYPE_SF, 0),
++
+   /* Builtin functions for ST Microelectronics Loongson-2E/2F cores.  */
+   LOONGSON_BUILTIN (packsswh, MIPS_V4HI_FTYPE_V2SI_V2SI),
+   LOONGSON_BUILTIN (packsshb, MIPS_V8QI_FTYPE_V4HI_V4HI),
+@@ -17411,6 +17473,26 @@ mips_expand_builtin_bposge (enum mips_builtin_type builtin_type, rtx target)
+ 				       const1_rtx, const0_rtx);
+ }
+ 
++/* Expand a __builtin_allegrex_cache() function.  Make sure the passed
++   cache function code is less than 32.  */
++
++static rtx
++mips_expand_builtin_cache (enum insn_code icode, rtx target, tree exp)
++{
++  int argno;
++  struct expand_operand ops[2];
++
++  for (argno = 0; argno < 2; argno++)
++    mips_prepare_builtin_arg (&ops[argno], exp, argno);
++
++  if (GET_CODE(ops[0].value) != CONST_INT ||
++      INTVAL(ops[0].value) < 0 || INTVAL(ops[0].value) > 0x1f)
++    error("Invalid first argument for cache builtin (0 <= arg <= 31)");
++
++  emit_insn(mips_expand_builtin_insn (icode, 2, ops, false));
++  return target;
++}
++
+ /* Implement TARGET_EXPAND_BUILTIN.  */
+ 
+ static rtx
+@@ -17459,6 +17541,9 @@ mips_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
+ 
+     case MIPS_BUILTIN_BPOSGE32:
+       return mips_expand_builtin_bposge (d->builtin_type, target);
++
++    case MIPS_BUILTIN_CACHE:
++      return mips_expand_builtin_cache (d->icode, target, exp);
+     }
+   gcc_unreachable ();
+ }
+@@ -20598,6 +20683,22 @@ mips_option_override (void)
+   if (TARGET_HARD_FLOAT_ABI && TARGET_MIPS5900)
+     REAL_MODE_FORMAT (SFmode) = &spu_single_format;
+ 
++  /* Validate -mpreferred-stack-boundary= value, or provide default.
++     The default of 128-bit is for newABI else 64-bit.  */
++  mips_preferred_stack_boundary = (TARGET_NEWABI ? 128 : 64);
++  mips_preferred_stack_align = (TARGET_NEWABI ? 16 : 8);
++  if (mips_preferred_stack_boundary_string)
++    {
++      i = atoi (mips_preferred_stack_boundary_string);
++      if (i < 2 || i > 12)
++       error ("-mpreferred-stack-boundary=%d is not between 2 and 12", i);
++      else
++        {
++          mips_preferred_stack_align = (1 << i);
++          mips_preferred_stack_boundary = mips_preferred_stack_align * 8;
++        }
++    }
++
+   mips_register_frame_header_opt ();
+ }
+ 
+diff --git a/gcc/config/mips/mips.h b/gcc/config/mips/mips.h
+index 6daf6d37165..ac1eb96b0d0 100644
+--- a/gcc/config/mips/mips.h
++++ b/gcc/config/mips/mips.h
+@@ -308,6 +308,7 @@ struct mips_cpu_info {
+ 				     || mips_arch == PROCESSOR_SB1A)
+ #define TARGET_SR71K                (mips_arch == PROCESSOR_SR71000)
+ #define TARGET_XLP                  (mips_arch == PROCESSOR_XLP)
++#define TARGET_ALLEGREX             (mips_arch == PROCESSOR_ALLEGREX)
+ 
+ /* Scheduling target defines.  */
+ #define TUNE_20KC		    (mips_tune == PROCESSOR_20KC)
+@@ -342,6 +343,7 @@ struct mips_cpu_info {
+ #define TUNE_P5600                  (mips_tune == PROCESSOR_P5600)
+ #define TUNE_I6400                  (mips_tune == PROCESSOR_I6400)
+ #define TUNE_P6600                  (mips_tune == PROCESSOR_P6600)
++#define TUNE_ALLEGREX               (mips_tune == PROCESSOR_ALLEGREX)
+ 
+ /* True if the pre-reload scheduler should try to create chains of
+    multiply-add or multiply-subtract instructions.  For example,
+@@ -1078,6 +1080,7 @@ struct mips_cpu_info {
+    ST Loongson 2E/2F.  */
+ #define ISA_HAS_CONDMOVE        (ISA_HAS_FP_CONDMOVE			\
+ 				 || TARGET_MIPS5900			\
++				 || TARGET_ALLEGREX			\
+ 				 || TARGET_LOONGSON_2EF)
+ 
+ /* ISA has LDC1 and SDC1.  */
+@@ -1120,11 +1123,13 @@ struct mips_cpu_info {
+ 
+ /* ISA has conditional trap instructions.  */
+ #define ISA_HAS_COND_TRAP	(!ISA_MIPS1				\
++				 && !TARGET_ALLEGREX                    \
+ 				 && !TARGET_MIPS16)
+ 
+ /* ISA has conditional trap with immediate instructions.  */
+ #define ISA_HAS_COND_TRAPI	(!ISA_MIPS1				\
+ 				 && mips_isa_rev <= 5			\
++				 && !TARGET_ALLEGREX                    \
+ 				 && !TARGET_MIPS16)
+ 
+ /* ISA has integer multiply-accumulate instructions, madd and msub.  */
+@@ -1183,7 +1188,8 @@ struct mips_cpu_info {
+ #define ISA_HAS_IEEE_754_2008	(mips_isa_rev >= 2)
+ 
+ /* ISA has count leading zeroes/ones instruction (not implemented).  */
+-#define ISA_HAS_CLZ_CLO		(mips_isa_rev >= 1 && !TARGET_MIPS16)
++#define ISA_HAS_CLZ_CLO		((mips_isa_rev >= 1 && !TARGET_MIPS16)   \
++				  || TARGET_ALLEGREX)
+ 
+ /* ISA has count trailing zeroes/ones instruction.  */
+ #define ISA_HAS_CTZ_CTO		(TARGET_LOONGSON_EXT2)
+@@ -1225,6 +1231,7 @@ struct mips_cpu_info {
+ 
+ /* ISA has the "ror" (rotate right) instructions.  */
+ #define ISA_HAS_ROR		((mips_isa_rev >= 2			\
++				  || TARGET_ALLEGREX			\
+ 				  || TARGET_MIPS5400			\
+ 				  || TARGET_MIPS5500			\
+ 				  || TARGET_SR71K			\
+@@ -1233,7 +1240,11 @@ struct mips_cpu_info {
+ 
+ /* ISA has the WSBH (word swap bytes within halfwords) instruction.
+    64-bit targets also provide DSBH and DSHD.  */
+-#define ISA_HAS_WSBH		(mips_isa_rev >= 2 && !TARGET_MIPS16)
++#define ISA_HAS_WSBH		((mips_isa_rev >= 2 && !TARGET_MIPS16)  \
++				  || TARGET_ALLEGREX)
++
++/* Similar to WSBH but for 32 bit words. */
++#define ISA_HAS_WSBW		(TARGET_ALLEGREX)
+ 
+ /* ISA has data prefetch instructions.  This controls use of 'pref'.  */
+ #define ISA_HAS_PREFETCH	((ISA_MIPS4				\
+@@ -1259,10 +1270,12 @@ struct mips_cpu_info {
+ #define ISA_HAS_TRUNC_W		(!ISA_MIPS1)
+ 
+ /* ISA includes the MIPS32r2 seb and seh instructions.  */
+-#define ISA_HAS_SEB_SEH		(mips_isa_rev >= 2 && !TARGET_MIPS16)
++#define ISA_HAS_SEB_SEH		((mips_isa_rev >= 2 && !TARGET_MIPS16)  \
++				  || TARGET_ALLEGREX)
+ 
+ /* ISA includes the MIPS32/64 rev 2 ext and ins instructions.  */
+-#define ISA_HAS_EXT_INS		(mips_isa_rev >= 2 && !TARGET_MIPS16)
++#define ISA_HAS_EXT_INS		((mips_isa_rev >= 2 && !TARGET_MIPS16)  \
++				  || TARGET_ALLEGREX)
+ 
+ /* ISA has instructions for accessing top part of 64-bit fp regs.  */
+ #define ISA_HAS_MXHC1		(!TARGET_FLOAT32	\
+@@ -1323,6 +1336,7 @@ struct mips_cpu_info {
+    earlier-ISA CPUs for which CPU documentation declares that the
+    instructions are really interlocked.  */
+ #define ISA_HAS_HILO_INTERLOCKS	(mips_isa_rev >= 1			\
++				 || TARGET_ALLEGREX 			\
+ 				 || TARGET_MIPS5500			\
+ 				 || TARGET_MIPS5900			\
+ 				 || TARGET_LOONGSON_2EF)
+@@ -2411,7 +2425,7 @@ enum reg_class
+    `crtl->outgoing_args_size'.  */
+ #define OUTGOING_REG_PARM_STACK_SPACE(FNTYPE) 1
+ 
+-#define STACK_BOUNDARY (TARGET_NEWABI ? 128 : 64)
++#define STACK_BOUNDARY (mips_preferred_stack_boundary)
+ 
+ /* Symbolic macros for the registers used to return integer and floating
+    point values.  */
+@@ -2538,7 +2552,7 @@ typedef struct mips_args {
+ /* Treat LOC as a byte offset from the stack pointer and round it up
+    to the next fully-aligned offset.  */
+ #define MIPS_STACK_ALIGN(LOC) \
+-  (TARGET_NEWABI ? ROUND_UP ((LOC), 16) : ROUND_UP ((LOC), 8))
++  (ROUND_UP ((LOC), mips_preferred_stack_align))
+ 
+ 
+ /* Output assembler code to FILE to increment profiler label # LABELNO
+@@ -3187,6 +3201,9 @@ while (0)
+ 	" TEXT_SECTION_ASM_OP);
+ #endif
+ 
++extern unsigned int mips_preferred_stack_boundary;
++extern unsigned int mips_preferred_stack_align;
++
+ #ifndef HAVE_AS_TLS
+ #define HAVE_AS_TLS 0
+ #endif
+diff --git a/gcc/config/mips/mips.md b/gcc/config/mips/mips.md
+index ac1d77afc7d..4ce2ba66db0 100644
+--- a/gcc/config/mips/mips.md
++++ b/gcc/config/mips/mips.md
+@@ -35,6 +35,7 @@
+   74kf2_1
+   74kf1_1
+   74kf3_2
++  allegrex
+   loongson_2e
+   loongson_2f
+   gs464
+@@ -820,7 +821,8 @@
+ (define_mode_iterator MOVECC [SI (DI "TARGET_64BIT")
+                               (CC "TARGET_HARD_FLOAT
+ 				   && !TARGET_LOONGSON_2EF
+-				   && !TARGET_MIPS5900")])
++				   && !TARGET_MIPS5900
++				   && !TARGET_ALLEGREX")])
+ 
+ ;; This mode iterator allows :FPCC to be used anywhere that an FP condition
+ ;; is needed.
+@@ -2261,11 +2263,11 @@
+ 	   (mult:DI
+ 	      (any_extend:DI (match_operand:SI 1 "register_operand" "d"))
+ 	      (any_extend:DI (match_operand:SI 2 "register_operand" "d")))))]
+-  "!TARGET_64BIT && (ISA_HAS_MSAC || GENERATE_MADD_MSUB || ISA_HAS_DSP)"
++  "!TARGET_64BIT && (ISA_HAS_MSAC || GENERATE_MADD_MSUB || ISA_HAS_DSP || TARGET_ALLEGREX)"
+ {
+   if (ISA_HAS_DSP_MULT)
+     return "msub<u>\t%q0,%1,%2";
+-  else if (TARGET_MIPS5500 || GENERATE_MADD_MSUB)
++  else if (TARGET_MIPS5500 || GENERATE_MADD_MSUB || TARGET_ALLEGREX)
+     return "msub<u>\t%1,%2";
+   else
+     return "msac<u>\t$0,%1,%2";
+@@ -2544,14 +2546,14 @@
+ 	 (mult:DI (any_extend:DI (match_operand:SI 1 "register_operand" "d"))
+ 		  (any_extend:DI (match_operand:SI 2 "register_operand" "d")))
+ 	 (match_operand:DI 3 "muldiv_target_operand" "0")))]
+-  "(TARGET_MAD || ISA_HAS_MACC || GENERATE_MADD_MSUB || ISA_HAS_DSP)
++  "(TARGET_MAD || ISA_HAS_MACC || GENERATE_MADD_MSUB || ISA_HAS_DSP || TARGET_ALLEGREX)
+    && !TARGET_64BIT"
+ {
+   if (TARGET_MAD)
+     return "mad<u>\t%1,%2";
+   else if (ISA_HAS_DSP_MULT)
+     return "madd<u>\t%q0,%1,%2";
+-  else if (GENERATE_MADD_MSUB || TARGET_MIPS5500)
++  else if (GENERATE_MADD_MSUB || TARGET_MIPS5500 || TARGET_ALLEGREX)
+     return "madd<u>\t%1,%2";
+   else
+     /* See comment in *macc.  */
+@@ -5886,12 +5888,19 @@
+   "wsbh\t%0,%1"
+   [(set_attr "type" "shift")])
+ 
+-(define_insn_and_split "bswapsi2"
++(define_insn "bswapsi2"
++  [(set (match_operand:SI 0 "register_operand" "=d")
++	(bswap:SI (match_operand:SI 1 "register_operand" "d")))]
++  "ISA_HAS_WSBW"
++  "wsbw\t%0,%1"
++  [(set_attr "type" "shift")])
++
++(define_insn_and_split "bswapsi2_split"
+   [(set (match_operand:SI 0 "register_operand" "=d")
+ 	(bswap:SI (match_operand:SI 1 "register_operand" "d")))]
+   "ISA_HAS_WSBH && ISA_HAS_ROR"
+   "#"
+-  "&& 1"
++  "&& !ISA_HAS_WSBW"
+   [(set (match_dup 0) (unspec:SI [(match_dup 1)] UNSPEC_WSBH))
+    (set (match_dup 0) (rotatert:SI (match_dup 0) (const_int 16)))]
+   ""
+@@ -7839,6 +7848,9 @@
+ ; The MIPS MSA Instructions.
+ (include "mips-msa.md")
+ 
++; Sony ALLEGREX instructions.
++(include "allegrex.md")
++
+ (define_c_enum "unspec" [
+   UNSPEC_ADDRESS_FIRST
+ ])
+diff --git a/gcc/config/mips/mips.opt b/gcc/config/mips/mips.opt
+index 195f5be01cc..931a72870cb 100644
+--- a/gcc/config/mips/mips.opt
++++ b/gcc/config/mips/mips.opt
+@@ -479,3 +479,7 @@ Use Loongson EXTension (EXT) instructions.
+ mloongson-ext2
+ Target Var(TARGET_LOONGSON_EXT2)
+ Use Loongson EXTension R2 (EXT2) instructions.
++
++mpreferred-stack-boundary=
++Target RejectNegative Joined Var(mips_preferred_stack_boundary_string)
++Attempt to keep stack aligned to this power of 2
+diff --git a/gcc/config/mips/psp.h b/gcc/config/mips/psp.h
+new file mode 100644
+index 00000000000..ebe54af60ed
+--- /dev/null
++++ b/gcc/config/mips/psp.h
+@@ -0,0 +1,42 @@
++/* Support for Sony's Playstation Portable (PSP).
++   Copyright (C) 2005 Free Software Foundation, Inc.
++   Contributed by Marcus R. Brown <mrbrown@ocgnet.org>
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 2, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING.  If not, write to
++the Free Software Foundation, 59 Temple Place - Suite 330,
++Boston, MA 02111-1307, USA.  */
++
++#undef  LIB_SPEC
++#define LIB_SPEC " \
++    -lm \
++    --start-group \
++    -lpthreadglue \
++    -lpthread \
++    -lcglue \
++    %{g:-lg} %{!g:-lc} \
++    --end-group \
++    -lpsputility -lpsprtc -lpspnet_inet -lpspnet_resolver \
++    -lpspsdk -lpspmodinfo -lpspuser -lpspkernel"
++
++/* Override the startfile spec to include crt0.o. */
++#undef STARTFILE_SPEC
++#define STARTFILE_SPEC "crt0%O%s crti%O%s crtbegin%O%s"
++
++#undef SUBTARGET_CPP_SPEC
++#define SUBTARGET_CPP_SPEC "-DPSP=1 -D__PSP__=1 -D_PSP=1 -D__psp__=1"
++
++#undef ENDFILE_SPEC
++#define ENDFILE_SPEC "crtend%O%s crtn%O%s"
+diff --git a/libatomic/configure b/libatomic/configure
+index e47d2d7fb35..6cfe99ce8b6 100755
+--- a/libatomic/configure
++++ b/libatomic/configure
+@@ -1265,6 +1265,13 @@ build=$build_alias
+ host=$host_alias
+ target=$target_alias
+ 
++# PSP SPECIFIC CODE
++# Skipping some Tests for PSP platform because pspsdk libraries aren't ready yet.
++skipTests=0
++if [ "$target" == "psp" ]; then
++   skipTests=1
++fi
++
+ # FIXME: To remove some day.
+ if test "x$host_alias" != x; then
+   if test "x$build_alias" = x; then
+@@ -3818,7 +3825,7 @@ test "$ac_cv_exeext" = no && ac_cv_exeext=
+ else
+   ac_file=''
+ fi
+-if test -z "$ac_file"; then :
++if [test -z "$ac_file"] && [ "$skipTests" -eq "0" ]; then :
+   { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+ $as_echo "no" >&6; }
+ $as_echo "$as_me: failed program was:" >&5
+@@ -3866,7 +3873,7 @@ for ac_file in conftest.exe conftest conftest.*; do
+     * ) break;;
+   esac
+ done
+-else
++elif "$skipTests" -eq "0"; then :
+   { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+ $as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+ as_fn_error $? "cannot compute suffix of executables: cannot compile and link
+@@ -14921,7 +14928,7 @@ pthread_t t; pthread_create(&t,NULL,g,NULL);
+ _ACEOF
+ if ac_fn_c_try_link "$LINENO"; then :
+ 
+-else
++elif "$skipTests" -eq "0"; then :
+   as_fn_error $? "Pthreads are required to build libatomic" "$LINENO" 5
+ fi
+ rm -f core conftest.err conftest.$ac_objext \
+diff --git a/libatomic/configure.tgt b/libatomic/configure.tgt
+index a92ae9e8309..912228a253e 100644
+--- a/libatomic/configure.tgt
++++ b/libatomic/configure.tgt
+@@ -149,7 +149,7 @@ case "${target}" in
+ 	tmake_file="t-aix"
+ 	;;
+ 
+-  *-*-linux* | *-*-gnu* | *-*-k*bsd*-gnu \
++  *-*-linux* | *-*-gnu* | *-*-k*bsd*-gnu | *-psp-elf* \
+   | *-*-netbsd* | *-*-freebsd* | *-*-openbsd* | *-*-dragonfly* \
+   | *-*-solaris2* | *-*-sysv4* | *-*-irix6* | *-*-osf* | *-*-hpux11* \
+   | *-*-darwin* | *-*-aix* | *-*-cygwin*)
+diff --git a/libgcc/config.host b/libgcc/config.host
+index 9d7212028d0..49be3a50b84 100644
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -162,10 +162,16 @@ microblaze*-*-*)
+ 	;;
+ mips*-*-*)
+ 	# All MIPS targets provide a full set of FP routines.
++	# (except for allegrex and R5900)
+ 	cpu_type=mips
+ 	tmake_file="mips/t-mips"
+ 	if test "${libgcc_cv_mips_hard_float}" = yes; then
+-		tmake_file="${tmake_file} t-hardfp-sfdf t-hardfp"
++		if test "${libgcc_cv_mips_single_float}" = yes; then
++			tmake_file="${tmake_file} t-hardfp-sf"
++		else
++			tmake_file="${tmake_file} t-hardfp-sfdf"
++		fi
++		tmake_file="${tmake_file} t-hardfp"
+ 	else
+ 		tmake_file="${tmake_file} t-softfp-sfdf"
+ 	fi
+@@ -1081,6 +1087,10 @@ mips-wrs-vxworks)
+ mipstx39-*-elf* | mipstx39el-*-elf*)
+ 	tmake_file="$tmake_file mips/t-crtstuff mips/t-mips16"
+ 	;;
++mipsallegrex*-psp*)
++	tmake_file="$tmake_file mips/t-allegrex-psp"
++	extra_parts="$extra_parts crti.o crtn.o"
++	;;
+ mmix-knuth-mmixware)
+ 	extra_parts="crti.o crtn.o crtbegin.o crtend.o"
+ 	tmake_file="${tmake_file} ${cpu_type}/t-${cpu_type}"
+diff --git a/libgcc/config/mips/t-allegrex-psp b/libgcc/config/mips/t-allegrex-psp
+new file mode 100644
+index 00000000000..e4dfb5276ca
+--- /dev/null
++++ b/libgcc/config/mips/t-allegrex-psp
+@@ -0,0 +1,2 @@
++# Disable use of GP-relative addressing in startup code.
++CRTSTUFF_T_CFLAGS += -mno-gpopt
+diff --git a/libgcc/config/t-hardfp-sf b/libgcc/config/t-hardfp-sf
+new file mode 100644
+index 00000000000..da50f354db3
+--- /dev/null
++++ b/libgcc/config/t-hardfp-sf
+@@ -0,0 +1,32 @@
++# Copyright (C) 2014-2021 Free Software Foundation, Inc.
++
++# This file is part of GCC.
++
++# GCC is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3, or (at your option)
++# any later version.
++
++# GCC is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with GCC; see the file COPYING3.  If not see
++# <http://www.gnu.org/licenses/>.
++
++hardfp_float_modes := sf
++# di and ti are provided by libgcc2.c where needed.
++hardfp_int_modes := si
++hardfp_extensions :=
++hardfp_truncations :=
++
++# Emulate 64 bit float:
++FPBIT = true
++DPBIT = true
++# Don't build functions handled by 32 bit hardware:
++LIB2FUNCS_EXCLUDE = _addsub_sf _mul_sf _div_sf \
++    _fpcmp_parts_sf _compare_sf _eq_sf _ne_sf _gt_sf _ge_sf \
++    _lt_sf _le_sf _unord_sf _si_to_sf _sf_to_si _negate_sf \
++    _thenan_sf _sf_to_usi _usi_to_sf
+diff --git a/libgcc/configure b/libgcc/configure
+index be5d45f1755..b22d6a8ce0f 100755
+--- a/libgcc/configure
++++ b/libgcc/configure
+@@ -675,6 +675,7 @@ infodir
+ docdir
+ oldincludedir
+ includedir
++runstatedir
+ localstatedir
+ sharedstatedir
+ sysconfdir
+@@ -766,6 +767,7 @@ datadir='${datarootdir}'
+ sysconfdir='${prefix}/etc'
+ sharedstatedir='${prefix}/com'
+ localstatedir='${prefix}/var'
++runstatedir='${localstatedir}/run'
+ includedir='${prefix}/include'
+ oldincludedir='/usr/include'
+ docdir='${datarootdir}/doc/${PACKAGE_TARNAME}'
+@@ -1018,6 +1020,15 @@ do
+   | -silent | --silent | --silen | --sile | --sil)
+     silent=yes ;;
+ 
++  -runstatedir | --runstatedir | --runstatedi | --runstated \
++  | --runstate | --runstat | --runsta | --runst | --runs \
++  | --run | --ru | --r)
++    ac_prev=runstatedir ;;
++  -runstatedir=* | --runstatedir=* | --runstatedi=* | --runstated=* \
++  | --runstate=* | --runstat=* | --runsta=* | --runst=* | --runs=* \
++  | --run=* | --ru=* | --r=*)
++    runstatedir=$ac_optarg ;;
++
+   -sbindir | --sbindir | --sbindi | --sbind | --sbin | --sbi | --sb)
+     ac_prev=sbindir ;;
+   -sbindir=* | --sbindir=* | --sbindi=* | --sbind=* | --sbin=* \
+@@ -1155,7 +1166,7 @@ fi
+ for ac_var in	exec_prefix prefix bindir sbindir libexecdir datarootdir \
+ 		datadir sysconfdir sharedstatedir localstatedir includedir \
+ 		oldincludedir docdir infodir htmldir dvidir pdfdir psdir \
+-		libdir localedir mandir
++		libdir localedir mandir runstatedir
+ do
+   eval ac_val=\$$ac_var
+   # Remove trailing slashes.
+@@ -1308,6 +1319,7 @@ Fine tuning of the installation directories:
+   --sysconfdir=DIR        read-only single-machine data [PREFIX/etc]
+   --sharedstatedir=DIR    modifiable architecture-independent data [PREFIX/com]
+   --localstatedir=DIR     modifiable single-machine data [PREFIX/var]
++  --runstatedir=DIR       modifiable per-process data [LOCALSTATEDIR/run]
+   --libdir=DIR            object code libraries [EPREFIX/lib]
+   --includedir=DIR        C header files [PREFIX/include]
+   --oldincludedir=DIR     C header files for non-gcc [/usr/include]
+@@ -5109,6 +5121,28 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+ fi
+ { $as_echo "$as_me:${as_lineno-$LINENO}: result: $libgcc_cv_mips_hard_float" >&5
+ $as_echo "$libgcc_cv_mips_hard_float" >&6; }
++
++  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the target is single-float" >&5
++$as_echo_n "checking whether the target is single-float... " >&6; }
++if ${libgcc_cv_mips_single_float+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
++/* end confdefs.h.  */
++#ifndef __mips_single_float
++     #error FOO
++     #endif
++
++_ACEOF
++if ac_fn_c_try_compile "$LINENO"; then :
++  libgcc_cv_mips_single_float=yes
++else
++  libgcc_cv_mips_single_float=no
++fi
++rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
++fi
++{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libgcc_cv_mips_single_float" >&5
++$as_echo "$libgcc_cv_mips_single_float" >&6; }
+ esac
+ 
+ case ${host} in
+diff --git a/libgcc/configure.ac b/libgcc/configure.ac
+index 2fc9d5d7c93..3f750dbe076 100644
+--- a/libgcc/configure.ac
++++ b/libgcc/configure.ac
+@@ -344,6 +344,16 @@ mips*-*-*)
+     ])],
+     [libgcc_cv_mips_hard_float=yes],
+     [libgcc_cv_mips_hard_float=no])])
++
++  AC_CACHE_CHECK([whether the target is single-float],
++		 [libgcc_cv_mips_single_float],
++		 [AC_COMPILE_IFELSE(
++    [AC_LANG_SOURCE([#ifndef __mips_single_float
++     #error FOO
++     #endif
++    ])],
++    [libgcc_cv_mips_single_float=yes],
++    [libgcc_cv_mips_single_float=no])])
+ esac
+ 
+ case ${host} in
+diff --git a/libgcc/gthr.h b/libgcc/gthr.h
+index 1989c0c86ed..8710f1c2938 100644
+--- a/libgcc/gthr.h
++++ b/libgcc/gthr.h
+@@ -144,6 +144,17 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+ #ifndef GTHREAD_USE_WEAK
+ #define GTHREAD_USE_WEAK 1
+ #endif
++
++/* *** PSP Specific change for std::thread ***
++   This file is modified by running sed commands on the 
++   libstdc++-v3/include/Makefile.am
++   These sed commands add prefix to the existing macros
++   this is why we CAN'T add here an #if __PSP__
++   As solution we force here GTHREAD_USE_WEAK to be 0 
++*/
++#undef GTHREAD_USE_WEAK
++#define GTHREAD_USE_WEAK 0
++
+ #endif
+ #include "gthr-default.h"
+ 
+diff --git a/libobjc/Makefile.in b/libobjc/Makefile.in
+index 8375f6f9951..027cb469943 100644
+--- a/libobjc/Makefile.in
++++ b/libobjc/Makefile.in
+@@ -71,7 +71,7 @@ AR_FLAGS = rc
+ RANLIB = @RANLIB@
+ 
+ CC = @CC@
+-CFLAGS = @CFLAGS@
++CFLAGS = -G0 @CFLAGS@
+ XCFLAGS = @XCFLAGS@
+ WARN_CFLAGS = -W -Wall -Wwrite-strings -Wstrict-prototypes
+ ALL_CFLAGS = -I. -I$(srcdir) $(CPPFLAGS) $(DEFS) \
+From 954cc8bda44496b5927a6b72e54a1a3765c04d61 Mon Sep 17 00:00:00 2001
+From: root <root@loser.party>
+Date: Mon, 8 Apr 2024 15:38:55 +0000
+Subject: [PATCH] Revert "Add pthread as standard libary"
+
+This reverts commit c2c9dff649f7e8576f6be32b1c15c46f1c4c0d42.
+---
+ gcc/config/mips/psp.h | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/gcc/config/mips/psp.h b/gcc/config/mips/psp.h
+index ebe54af60ed..49849fb6bd4 100644
+--- a/gcc/config/mips/psp.h
++++ b/gcc/config/mips/psp.h
+@@ -23,13 +23,11 @@ Boston, MA 02111-1307, USA.  */
+ #define LIB_SPEC " \
+     -lm \
+     --start-group \
+-    -lpthreadglue \
+-    -lpthread \
+     -lcglue \
+     %{g:-lg} %{!g:-lc} \
+     --end-group \
+     -lpsputility -lpsprtc -lpspnet_inet -lpspnet_resolver \
+-    -lpspsdk -lpspmodinfo -lpspuser -lpspkernel"
++    -lpspmodinfo -lpspuser -lpspkernel"
+ 
+ /* Override the startfile spec to include crt0.o. */
+ #undef STARTFILE_SPEC
+-- 
+2.31.1
+
+From e7c3cd9daf24c83c5d356f392a2a5ce97eec3855 Mon Sep 17 00:00:00 2001
+From: root <root@loser.party>
+Date: Mon, 8 Apr 2024 15:49:36 +0000
+Subject: [PATCH] Revert "add atomic library"
+
+This reverts commit b82cfa69dbb2d375f9c21d2c70b9a248c830e8ba.
+---
+ libatomic/configure.tgt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/libatomic/configure.tgt b/libatomic/configure.tgt
+index 912228a253e..a92ae9e8309 100644
+--- a/libatomic/configure.tgt
++++ b/libatomic/configure.tgt
+@@ -149,7 +149,7 @@ case "${target}" in
+ 	tmake_file="t-aix"
+ 	;;
+ 
+-  *-*-linux* | *-*-gnu* | *-*-k*bsd*-gnu | *-psp-elf* \
++  *-*-linux* | *-*-gnu* | *-*-k*bsd*-gnu \
+   | *-*-netbsd* | *-*-freebsd* | *-*-openbsd* | *-*-dragonfly* \
+   | *-*-solaris2* | *-*-sysv4* | *-*-irix6* | *-*-osf* | *-*-hpux11* \
+   | *-*-darwin* | *-*-aix* | *-*-cygwin*)
+-- 
+2.31.1
+
