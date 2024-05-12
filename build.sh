@@ -118,6 +118,7 @@ then
         --enable-languages=$LANGUAGES --disable-libmudflap \
         --disable-libsanitizer --disable-nls \
         --disable-libssp \
+        --with-newlib \
         $GCC_MULTILIB_CONFFLAGS \
         $GCC_CONFFLAGS
 fi
